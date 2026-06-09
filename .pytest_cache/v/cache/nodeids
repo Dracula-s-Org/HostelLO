@@ -1,5 +1,0 @@
-[
-  "app/engine/test_matching.py::test_cleanliness_hard_gate",
-  "app/engine/test_matching.py::test_roommate_compatibility_score_exact",
-  "app/engine/test_matching.py::test_smoking_resident_excluded_from_non_smoking_hostel"
-]
