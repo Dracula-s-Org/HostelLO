@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter  # type: ignore[import]
+from fastapi import APIRouter  
 from app.engine.matching import rank_candidates
 from app.config import config
 
