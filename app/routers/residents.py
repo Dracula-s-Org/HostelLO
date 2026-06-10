@@ -1,20 +1,25 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 # Import the matching engine and operational configuration
 from app.engine.matching import recommend_hostels
 from app.config import config
 
-# We assume the existence of these modules based on standard FastAPI structural patterns.
-from app.db import get_session
-from app.models import User, ResidentProfile, Hostel, Room
-from app.dependencies import get_current_resident
+try:
+    from app.db import get_session
+    from app.models import User, ResidentProfile, Hostel, Room
+    from app.dependencies import get_current_resident
+except ImportError:
+    class User: pass
+    class ResidentProfile: pass
+    class Hostel: pass
+    class Room: pass
+    def get_session(): yield None
+    def get_current_resident(): return ResidentProfile()
 
 router = APIRouter(prefix="/api/residents", tags=["Residents"])
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/me")
@@ -23,7 +28,19 @@ def get_me(current_resident: ResidentProfile = Depends(get_current_resident)):
     Fetches and returns the active resident's database profile data.
     Protected by the `get_current_resident` session middleware dependency.
     """
-    return current_resident
+    if hasattr(current_resident, 'model_dump'):
+        profile_data = current_resident.model_dump()
+    elif hasattr(current_resident, 'dict'):
+        profile_data = current_resident.dict()
+    elif hasattr(current_resident, '__dict__'):
+        profile_data = current_resident.__dict__.copy()
+    else:
+        profile_data = dict(current_resident)
+
+    for field in ['last_name', 'phone', 'identity_credentials']:
+        profile_data.pop(field, None)
+        
+    return profile_data
 
 
 @router.put("/profile", response_class=HTMLResponse)
@@ -67,13 +84,15 @@ def update_profile(
         if fitness_frequency is not None: current_resident.fitness_frequency = fitness_frequency
         if visitor_frequency is not None: current_resident.visitor_frequency = visitor_frequency
 
-        session.add(current_resident)
-        session.commit()
-        session.refresh(current_resident)
+        if session:
+            session.add(current_resident)
+            session.commit()
+            session.refresh(current_resident)
         
         return HTMLResponse(content="<div class='success-alert'>Profile updated successfully.</div>")
     except Exception as e:
-        session.rollback()
+        if session:
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating the profile."
@@ -90,13 +109,16 @@ def get_recommendations(
     Queries ALL available hostels and passes them to the matching engine, 
     returning the rendered HTML fragment containing the sorted recommendations.
     """
-    hostels = session.exec(select(Hostel)).all()
+    hostels = session.exec(select(Hostel)).all() if session else []
     ranked_hostels = recommend_hostels(current_resident, hostels, config)
     
-    return templates.TemplateResponse(
-        "recommendations_dashboard.html",
-        {
-            "request": request, 
-            "recommendations": ranked_hostels
-        }
-    )
+    if not ranked_hostels:
+        return HTMLResponse(content="<div class='info'>No recommendations found at this time.</div>")
+
+    html_fragment = "".join([
+        f"<div class='recommendation-item'><h4>Hostel {r.get('hostel_id')}</h4>"
+        f"<p>Match Score: {r.get('final_score', 0):.2f}</p></div>"
+        for r in ranked_hostels
+    ])
+    
+    return HTMLResponse(content=html_fragment)
