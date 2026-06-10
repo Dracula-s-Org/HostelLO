@@ -89,14 +89,19 @@ def recommend_hostels(resident, hostels, config) -> list[dict]:
         
         # 3. Downstream Modifiers
         if _get(hostel, 'tier') == 'PREMIUM':
-            base_score *= config.PREMIUM_BOOST
+            base_score = min(1.0, base_score * config.PREMIUM_BOOST)
             
         if _get(hostel, 'verified'):
-            base_score += config.VERIFIED_BOOST
+            base_score = min(1.0, base_score + config.VERIFIED_BOOST)
             
         results.append({
-            'hostel': hostel,
-            'final_score': base_score
+            'hostel_id': _get(hostel, 'id'),
+            'final_score': base_score,
+            'price_fit': price_fit,
+            'location_fit': location_fit,
+            'amenity_fit': amenity_fit,
+            'tier': _get(hostel, 'tier'),
+            'verified': _get(hostel, 'verified', False)
         })
         
     return sorted(results, key=lambda x: x['final_score'], reverse=True)
@@ -118,10 +123,10 @@ def rank_candidates(resident_x, candidates, config) -> list[dict]:
     rx_bmin = _get(resident_x, 'budget_min', 0.0)
     rx_social = _get(resident_x, 'social_profile')
     
-    def ordinal_score(cand, attr):
+    def ordinal_score(cand, attr, levels=4):
         a = _get(resident_x, attr, 1)
         b = _get(cand, attr, 1)
-        return 1.0 - (abs(a - b) / 3.0)
+        return 1.0 - (abs(a - b) / float(levels - 1))
 
     for cand in candidates:
         # Pairwise Hard Gates
@@ -161,8 +166,15 @@ def rank_candidates(resident_x, candidates, config) -> list[dict]:
         ) * 100.0
         
         results.append({
-            'candidate': cand,
-            'overall_score': overall_score
+            'candidate_id': _get(cand, 'id'),
+            'overall_score': overall_score,
+            'breakdown': {
+                'social': social_score,
+                'gaming': gaming_score,
+                'study': study_score,
+                'fitness': fitness_score,
+                'visitors': visitor_score
+            }
         })
         
     return sorted(results, key=lambda x: x['overall_score'], reverse=True)
