@@ -1,0 +1,48 @@
+{% if not items %}
+<p class="text-sm text-gray-500">No applications awaiting review.</p>
+{% endif %}
+{% for it in items %}
+<div class="border rounded-lg p-4 mb-3 space-y-2" id="application-{{ it.booking.id }}">
+  <div class="flex items-center justify-between">
+    <div>
+      <b>{{ it.applicant.first_name if it.applicant else 'Unknown' }}</b>
+      <span class="text-xs text-gray-500">applying to {{ it.hostel.name }} — {{ it.room.type }} room (₹{{ '%.0f' % it.room.price }})</span>
+    </div>
+    <span class="text-xs text-gray-500">{{ it.room.occupied_count }}/{{ it.room.capacity }} occupied</span>
+  </div>
+
+  {% if it.applicant %}
+  <p class="text-xs text-gray-600">
+    Age {{ it.applicant.age }} ·
+    {{ 'smoker' if it.applicant.habits.smoking else 'non-smoker' }} ·
+    {{ 'drinks' if it.applicant.habits.drinking else 'no alcohol' }} ·
+    {{ it.applicant.habits.diet | lower }} ·
+    {{ it.applicant.habits.sleep_schedule | lower }} riser ·
+    cleanliness {{ it.applicant.habits.cleanliness }}/5
+  </p>
+  {% endif %}
+
+  {% if it.match %}
+  <div class="text-xs bg-indigo-50 rounded p-2">
+    Shared-room pair · match <b>{{ it.match.status }}</b> · compatibility <b>{{ it.match.score }}%</b>
+    {# breakdown keys frozen by Dev A's engine contract #}
+    {% if it.match.breakdown %}
+    <span class="text-gray-600">
+      {% for dim in ['social', 'gaming', 'study', 'fitness', 'visitors'] %}
+        {{ dim }} {{ '%.0f' % ((it.match.breakdown.get(dim) or 0) * 100) }}%{{ ' · ' if not loop.last }}
+      {% endfor %}
+    </span>
+    {% endif %}
+    <p class="text-gray-500 mt-1">Approving either linked request confirms the pair atomically.</p>
+  </div>
+  {% endif %}
+
+  <div class="flex gap-2">
+    <button hx-post="/api/bookings/{{ it.booking.id }}/approve" hx-target="#application-{{ it.booking.id }}"
+            class="bg-green-600 text-white rounded px-4 py-1 text-sm">Approve</button>
+    <button hx-post="/api/bookings/{{ it.booking.id }}/reject" hx-target="#application-{{ it.booking.id }}"
+            hx-confirm="Reject this application?"
+            class="bg-red-100 text-red-700 rounded px-4 py-1 text-sm">Reject</button>
+  </div>
+</div>
+{% endfor %}
