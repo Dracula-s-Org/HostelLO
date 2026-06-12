@@ -22,6 +22,12 @@ htmlcov/
 # Environment
 .env
 
+# Local SQLite databases
+*.db
+
+# Uploaded assets (dev-only; production uses Cloudinary)
+static/uploads/
+
 # Editor / OS
 .vscode/
 .idea/
