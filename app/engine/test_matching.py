@@ -79,7 +79,7 @@ def test_cleanliness_hard_gate(config):
     
     results = rank_candidates(resident, [cand_pass, cand_fail], config)
     assert len(results) == 1
-    assert results[0]['candidate']['id'] == 'cand_1'
+    assert results[0]['candidate_id'] == 'cand_1'
 
 
 def test_roommate_compatibility_score_exact(config):
