@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}HostelLo — Login{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-16 bg-white rounded-xl shadow p-8 space-y-4">
+  <h1 class="text-2xl font-bold">Welcome to HostelLo</h1>
+  <p class="text-sm text-gray-600">Hostels and roommates that actually fit you.</p>
+  <form id="otp-step" hx-post="/api/auth/request-otp" hx-target="#otp-step" hx-swap="outerHTML" class="space-y-3">
+    <input name="phone" placeholder="Phone number" minlength="10" maxlength="15"
+           class="border rounded p-2 w-full" required>
+    <div class="flex gap-4 text-sm">
+      <label class="flex items-center gap-1">
+        <input type="radio" name="role" value="RESIDENT" checked> Resident
+      </label>
+      <label class="flex items-center gap-1">
+        <input type="radio" name="role" value="OWNER"> Owner
+      </label>
+    </div>
+    <button class="bg-indigo-600 text-white rounded px-4 py-2 w-full">Send OTP</button>
+  </form>
+</div>
+{% endblock %}
