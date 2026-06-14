@@ -19,7 +19,8 @@ def _assert_owns_room(db_session: Session, room: Room, owner_user_id) -> None:
     hostel = db_session.query(Hostel).filter(Hostel.id == room.hostel_id).first()
     if not hostel or hostel.owner_id != owner_user_id:
         db_session.rollback()
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your property")
+        # 404 (not 403): don't confirm a booking on another owner's room exists.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
 
 def commit_booking_allocation(db_session: Session, booking_id, owner_user_id=None) -> dict:

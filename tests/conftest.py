@@ -4,6 +4,10 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///./test_hostello.db"
 os.environ["MOCK_OTP"] = "true"
 os.environ["MOCK_KYC"] = "true"
+# The IP rate limiter shares one in-memory store across the whole app, so leaving
+# it on would leak buckets between unrelated tests (every test logs in from the
+# same client IP). The dedicated rate-limit test re-enables it explicitly.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +20,11 @@ from app import models  # noqa: F401 — register tables on metadata
 
 @pytest.fixture(autouse=True)
 def fresh_db():
+    # OTP send/attempt state lives in a module-level dict, not the DB; clear it
+    # so per-window send limits don't leak across tests that reuse phone numbers.
+    from app.security import _otp_state
+
+    _otp_state.clear()
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     yield

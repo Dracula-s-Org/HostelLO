@@ -132,7 +132,8 @@ def create_booking(
 def cancel_booking(session: Session, booking: Booking, profile: ResidentProfile) -> str:
     """Cancellation cascades (HLD §5.2.3). Returns a human-readable outcome."""
     if booking.resident_id != profile.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your booking")
+        # 404 (not 403): never confirm another resident's booking exists.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
     if booking.status == BookingStatus.REQUESTED.value:
         booking.status = BookingStatus.CANCELLED.value

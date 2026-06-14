@@ -7,9 +7,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import config
 from app.db import init_db
+from app.ratelimit import limiter
 from app.routers import (
     assets,
     auth,
@@ -36,6 +40,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HostelLo", lifespan=lifespan)
+
+# IP-based rate limiting. The default 100/min/IP applies globally via the
+# middleware; routers add tighter per-route caps (OTP, KYC, uploads).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 if config.allowed_hosts != ["*"]:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.allowed_hosts)

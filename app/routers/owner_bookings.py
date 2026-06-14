@@ -32,7 +32,8 @@ def _owned_booking(session: Session, owner: OwnerProfile, booking_id: uuid.UUID)
     room = session.get(Room, booking.room_id)
     hostel = session.get(Hostel, room.hostel_id) if room else None
     if not hostel or hostel.owner_id != owner.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your property")
+        # 404 (not 403): a foreign booking id is indistinguishable from a missing one.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     return booking, room, hostel
 
 
