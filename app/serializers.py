@@ -4,7 +4,7 @@ Every resident-profile exposure flows through these views — no hand-rolled
 field stripping anywhere else. The schema keeps a single `name`; "first name"
 is its first token.
 """
-from app.models import OwnerProfile, ResidentProfile, User
+from app.models import Hostel, OwnerProfile, ResidentProfile, Room, User
 
 
 def _first_name(profile: ResidentProfile) -> str:
@@ -53,6 +53,61 @@ def to_owner_self_view(profile: OwnerProfile) -> dict:
         "user_id": str(profile.user_id),
         "name": profile.name,
         "contact": profile.contact,
+    }
+
+
+def to_hostel_view(hostel: Hostel) -> dict:
+    """Public hostel shape shared by recommendations (A1), hostel detail (B1),
+    and the owner dashboard (A5). No PII — address/amenities are listing data.
+    """
+    return {
+        "id": str(hostel.id),
+        "name": hostel.name,
+        "address": hostel.address,
+        "location": hostel.location,
+        "gender_policy": hostel.gender_policy,
+        "listing_tier": hostel.listing_tier,
+        "verified": hostel.verified,
+        "amenities": hostel.amenities or [],
+        "veg_only": hostel.veg_only,
+        "allow_smoking": hostel.allow_smoking,
+        "allow_drinking": hostel.allow_drinking,
+        "min_age": hostel.min_age,
+        "max_age": hostel.max_age,
+    }
+
+
+def to_room_view(room: Room) -> dict:
+    """Room shape shared by A1/A5/B2. Exposes `image_count`, never raw paths —
+    images are pulled through the gated GET /api/assets/rooms/{room_id}/{index}.
+    """
+    return {
+        "id": str(room.id),
+        "type": room.type,
+        "capacity": room.capacity,
+        "occupied_count": room.occupied_count,
+        "price": room.price,
+        "status": room.status,
+        "image_count": len(room.image_paths or []),
+    }
+
+
+def to_recommendation_view(
+    hostel: Hostel,
+    rooms: list,
+    score: float,
+    price_fit: float,
+    location_fit: float,
+    amenity_fit: float,
+) -> dict:
+    """One ranked recommendation card (A1): hostel + its rooms + fit vectors."""
+    return {
+        "hostel": to_hostel_view(hostel),
+        "rooms": [to_room_view(r) for r in rooms],
+        "score": round(score, 1),
+        "price_fit": price_fit,
+        "location_fit": location_fit,
+        "amenity_fit": amenity_fit,
     }
 
 

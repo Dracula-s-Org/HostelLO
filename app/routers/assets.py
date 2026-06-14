@@ -10,8 +10,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from sqlmodel import Session
 
 from app.db import get_session
-from app.dependencies import get_current_owner, get_current_user
-from app.models import Hostel, KycVerification, OwnerProfile, Room, User
+from app.dependencies import get_current_user
+from app.models import KycVerification, Room, User
 from app.services.uploads import resolve_upload_path
 
 router = APIRouter(prefix="/api/assets", tags=["Assets"])
@@ -21,15 +21,15 @@ router = APIRouter(prefix="/api/assets", tags=["Assets"])
 def room_image(
     room_id: uuid.UUID,
     index: int,
-    owner: OwnerProfile = Depends(get_current_owner),
+    _: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    # Room images are public listing content: any authenticated user (residents
+    # browsing, owners managing) may read them. Auth still gates the raw-path
+    # proxy; per-user ownership only matters for KYC documents below.
     room = session.get(Room, room_id)
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    hostel = session.get(Hostel, room.hostel_id)
-    if hostel.owner_id != owner.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your property")
     paths = room.image_paths or []
     if index < 0 or index >= len(paths):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such image")
