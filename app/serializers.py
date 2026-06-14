@@ -56,6 +56,17 @@ def to_owner_self_view(profile: OwnerProfile) -> dict:
     }
 
 
+def to_owner_contact_view(owner: OwnerProfile) -> dict:
+    """Owner name + contact, revealed ONLY to a resident holding a CONFIRMED
+    booking in this owner's hostel (booking detail, B3). PII — the caller MUST
+    gate on booking status before invoking this.
+    """
+    return {
+        "name": owner.name,
+        "contact": owner.contact,
+    }
+
+
 def to_hostel_view(hostel: Hostel) -> dict:
     """Public hostel shape shared by recommendations (A1), hostel detail (B1),
     and the owner dashboard (A5). No PII — address/amenities are listing data.

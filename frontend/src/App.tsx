@@ -10,6 +10,7 @@ import { Recommendations } from "./pages/resident/Recommendations";
 import { HostelDetail } from "./pages/resident/HostelDetail";
 import { RoomSelection } from "./pages/resident/RoomSelection";
 import { Bookings } from "./pages/resident/Bookings";
+import { BookingDetail } from "./pages/resident/BookingDetail";
 import { RoommateMatching } from "./pages/resident/RoommateMatching";
 import { RoommateRequests } from "./pages/resident/RoommateRequests";
 import { OwnerDashboard } from "./pages/owner/OwnerDashboard";
@@ -37,6 +38,7 @@ export function App() {
       <Route path="/resident/hostels/:id" element={<RequireAuth role="RESIDENT"><HostelDetail /></RequireAuth>} />
       <Route path="/resident/hostels/:id/rooms" element={<RequireAuth role="RESIDENT"><RoomSelection /></RequireAuth>} />
       <Route path="/resident/bookings" element={<RequireAuth role="RESIDENT"><Bookings /></RequireAuth>} />
+      <Route path="/resident/bookings/:id" element={<RequireAuth role="RESIDENT"><BookingDetail /></RequireAuth>} />
       <Route path="/resident/bookings/:id/roommates" element={<RequireAuth role="RESIDENT"><RoommateMatching /></RequireAuth>} />
       <Route path="/resident/roommate-requests" element={<RequireAuth role="RESIDENT"><RoommateRequests /></RequireAuth>} />
 

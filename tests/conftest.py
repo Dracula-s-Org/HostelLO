@@ -16,6 +16,11 @@ from app import models  # noqa: F401 — register tables on metadata
 
 @pytest.fixture(autouse=True)
 def fresh_db():
+    # OTP send/attempt state lives in a module-level dict, not the DB; clear it
+    # so per-window send limits don't leak across tests that reuse phone numbers.
+    from app.security import _otp_state
+
+    _otp_state.clear()
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     yield

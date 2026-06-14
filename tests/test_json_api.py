@@ -253,6 +253,75 @@ def test_room_image_readable_by_resident(make_client, session):
     assert anon.get(f"/api/assets/rooms/{room.id}/0").status_code == 401
 
 
+def test_booking_detail_owner_contact_gated_on_confirmed(make_client, session):
+    """B3: a resident's own booking detail. Owner contact (PII) is null while
+    REQUESTED and only revealed once the owner approves (CONFIRMED)."""
+    owner = make_client()
+    login(owner, "8000000001", "OWNER")
+    _list_a_hostel(owner)  # owner name "Rajesh Kumar", contact "r@pg.in"
+    hostel = session.exec(select(Hostel)).first()
+    owner.post(f"/api/hostels/{hostel.id}/rooms", data={"type": "SINGLE", "capacity": "1", "price": "9000"})
+    room = session.exec(select(Room)).first()
+
+    res = make_client()
+    login(res, "8000000002", "RESIDENT")
+    create_resident_profile(res)
+    submit_kyc(res)
+    res.post("/api/bookings", json={"roomId": str(room.id)})
+    booking_id = res.get("/api/bookings/mine").json()["bookings"][0]["id"]
+
+    # REQUESTED — facility detail visible, owner contact withheld
+    r = res.get(f"/api/bookings/{booking_id}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "REQUESTED"
+    assert body["hostel"]["address"] == "12 Main Rd"
+    assert body["room"]["id"] == str(room.id)
+    assert body["owner"] is None
+
+    # Owner approves → CONFIRMED unlocks the contact
+    assert owner.post(f"/api/bookings/{booking_id}/approve").status_code == 200
+    body = res.get(f"/api/bookings/{booking_id}").json()
+    assert body["status"] == "CONFIRMED"
+    assert body["owner"] == {"name": "Rajesh Kumar", "contact": "r@pg.in"}
+
+
+def test_booking_detail_idor_and_auth(make_client, session):
+    """A resident can only read their own booking; unknown ids 404; owners are
+    out of scope for this resident-facing read."""
+    import uuid
+
+    owner = make_client()
+    login(owner, "8000000001", "OWNER")
+    _list_a_hostel(owner)
+    hostel = session.exec(select(Hostel)).first()
+    owner.post(f"/api/hostels/{hostel.id}/rooms", data={"type": "SINGLE", "capacity": "1", "price": "9000"})
+    room = session.exec(select(Room)).first()
+
+    res_a = make_client()
+    login(res_a, "8000000002", "RESIDENT")
+    create_resident_profile(res_a)
+    submit_kyc(res_a)
+    res_a.post("/api/bookings", json={"roomId": str(room.id)})
+    booking_id = res_a.get("/api/bookings/mine").json()["bookings"][0]["id"]
+
+    # A different resident must not read A's booking
+    res_b = make_client()
+    login(res_b, "8000000003", "RESIDENT")
+    create_resident_profile(res_b)
+    assert res_b.get(f"/api/bookings/{booking_id}").status_code == 403
+
+    # Unknown booking 404s for the owner-of-record
+    assert res_a.get(f"/api/bookings/{uuid.uuid4()}").status_code == 404
+
+    # Owner role can't hit a resident-scoped read
+    assert owner.get(f"/api/bookings/{booking_id}").status_code == 403
+
+    # Anonymous is rejected before any scoping
+    anon = make_client()
+    assert anon.get(f"/api/bookings/{booking_id}").status_code == 401
+
+
 def test_pending_matches_json_a4(make_client, session):
     # Owner + shared room
     owner = make_client()

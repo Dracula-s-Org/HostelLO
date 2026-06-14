@@ -14,12 +14,13 @@ from app.models import (
     Booking,
     BookingStatus,
     Hostel,
+    OwnerProfile,
     ResidentProfile,
     Room,
     RoomType,
     User,
 )
-from app.serializers import to_candidate_view
+from app.serializers import to_candidate_view, to_owner_contact_view
 from app.services.booking_lifecycle import cancel_booking, create_booking
 from app.services.matchmaking import build_candidate_pool, rank_pool
 
@@ -131,3 +132,47 @@ def my_bookings(
         for b, r, h in rows
     ]
     return {"bookings": bookings}
+
+
+# Declared after the static `/mine` route so `/mine` keeps winning the match.
+@router.get("/{booking_id}")
+def booking_detail(
+    booking_id: uuid.UUID,
+    profile: ResidentProfile = Depends(get_current_resident),
+    session: Session = Depends(get_session),
+):
+    """A single booking's facility detail for the resident who placed it.
+
+    The owner's contact is PII and is revealed ONLY when the booking is
+    CONFIRMED — for any other status `owner` is null. 403 if the booking
+    belongs to a different resident (IDOR guard).
+    """
+    booking = session.get(Booking, booking_id)
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    if booking.resident_id != profile.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your booking")
+
+    room = session.get(Room, booking.room_id)
+    hostel = session.get(Hostel, room.hostel_id)
+
+    owner_view = None
+    if booking.status == BookingStatus.CONFIRMED.value:
+        owner = session.get(OwnerProfile, hostel.owner_id)
+        if owner:
+            owner_view = to_owner_contact_view(owner)
+
+    return {
+        "id": str(booking.id),
+        "status": booking.status,
+        "created_at": booking.created_at.isoformat(),
+        "room": {"id": str(room.id), "type": room.type, "price": room.price},
+        "hostel": {
+            "id": str(hostel.id),
+            "name": hostel.name,
+            "location": hostel.location,
+            "address": hostel.address,
+        },
+        "roommate_match_id": str(booking.roommate_match_id) if booking.roommate_match_id else None,
+        "owner": owner_view,
+    }
