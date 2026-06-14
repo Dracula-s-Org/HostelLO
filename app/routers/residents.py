@@ -15,6 +15,7 @@ from app.db import get_session
 from app.dependencies import get_current_resident, require_role
 from app.engine.matching import recommend_hostels
 from app.models import Hostel, ResidentProfile, Room, User, UserRole
+from app.serializers import to_resident_self_view
 from app.services.engine_adapters import hostel_to_engine, resident_to_engine
 from app.templating import templates
 
@@ -23,8 +24,10 @@ router = APIRouter(prefix="/api/residents", tags=["Residents"])
 
 @router.get("/me")
 def get_me(current_resident: ResidentProfile = Depends(get_current_resident)):
-    """The resident's own profile — self-access, no DPDP redaction needed."""
-    return current_resident.model_dump(mode="json")
+    """The resident's own profile via an explicit allowlist (no raw model dump —
+    a pre-booked roommate's phone is third-party PII and is never echoed in full).
+    """
+    return to_resident_self_view(current_resident)
 
 
 def _apply_profile_fields(

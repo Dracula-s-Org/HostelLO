@@ -17,10 +17,17 @@ services:
         sync: false # paste from the Cloudinary dashboard
       - key: JWT_SECRET
         generateValue: true
+      - key: ENVIRONMENT
+        value: "production"
+      - key: ALLOWED_HOSTS
+        sync: false # set to the Render hostname, e.g. hostello.onrender.com
+      # Mock providers are DISABLED in production. A real SMS/KYC integration must
+      # be wired before login is functional (see DEPLOY.md). Never set these "true"
+      # on a public deploy — it makes "123456" a universal login.
       - key: MOCK_OTP
-        value: "true"
+        value: "false"
       - key: MOCK_KYC
-        value: "true"
+        value: "false"
       - key: W_PRICE
         value: "0.40"
       - key: W_LOCATION

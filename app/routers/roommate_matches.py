@@ -7,6 +7,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse
+from markupsafe import escape
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -147,7 +148,7 @@ def accept_roommate_match(
     partner = to_match_confirmed_view(partner_profile, partner_user)
     return HTMLResponse(
         "<div class='rounded bg-green-50 text-green-800 p-3'>Match confirmed! Your linked booking "
-        f"was created. Roommate: <b>{partner['full_name']}</b> · {partner['phone']}</div>"
+        f"was created. Roommate: <b>{escape(partner['full_name'])}</b> · {escape(partner['phone'])}</div>"
     )
 
 
@@ -200,9 +201,9 @@ def pending_matches(
     parts = []
     for m in matches:
         proposer = session.get(ResidentProfile, m.resident_a)
-        first = (proposer.name or "").split()[0] if proposer else "Someone"
+        first = (proposer.name or "").split()[0] if proposer and proposer.name else "Someone"
         parts.append(
-            f"<div class='border rounded p-3 space-y-2'><p><b>{first}</b> proposed to share a room "
+            f"<div class='border rounded p-3 space-y-2'><p><b>{escape(first)}</b> proposed to share a room "
             f"with you — compatibility <b>{m.score}%</b></p>"
             f"<div class='flex gap-2'>"
             f"<button hx-post='/api/roommate-matches/{m.id}/accept' hx-target='closest div' "
