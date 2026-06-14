@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HostelLo{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-900">
+  <nav class="bg-indigo-700 text-white px-6 py-3 flex items-center justify-between">
+    <a href="/" class="font-bold text-lg">🏠 HostelLo</a>
+    {% block nav %}{% endblock %}
+  </nav>
+  <main class="max-w-5xl mx-auto p-6">
+    {% block content %}{% endblock %}
+  </main>
+  <div id="toast"></div>
+  <script>
+    // HTMX convention: action endpoints return the fragment for the hx-target.
+    // 4xx responses still swap so error fragments render in place.
+    document.body.addEventListener('htmx:beforeSwap', function (evt) {
+      if (evt.detail.xhr.status >= 400) {
+        evt.detail.shouldSwap = true;
+        evt.detail.isError = false;
+        var detail = '';
+        try { detail = JSON.parse(evt.detail.xhr.responseText).detail || ''; } catch (e) {}
+        if (detail) {
+          evt.detail.serverResponse = "<div class='rounded bg-red-50 text-red-700 p-3'>" + detail + "</div>";
+        }
+      }
+    });
+  </script>
+</body>
+</html>
