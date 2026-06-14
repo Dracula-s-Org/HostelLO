@@ -4,6 +4,7 @@
 // request just needs `credentials: "include"`. Most write endpoints take form
 // fields (`Form(...)` in FastAPI); POST /api/bookings is the one JSON body.
 import type {
+  BookingDetail,
   BookingPlacement,
   BookingSummary,
   Candidate,
@@ -185,6 +186,7 @@ export const api = {
     roommateRecommendations: (bookingId: string) =>
       getJson<{ candidates: Candidate[] }>(`/api/bookings/${bookingId}/roommate-recommendations`),
     mine: () => getJson<{ bookings: BookingSummary[] }>("/api/bookings/mine"),
+    detail: (id: string) => getJson<BookingDetail>(`/api/bookings/${id}`),
   },
 
   roommateMatches: {

@@ -94,6 +94,18 @@ export interface BookingSummary {
   roommate_match_id: string | null;
 }
 
+// GET /api/bookings/{id} -> single booking + facility detail. `owner` (name +
+// contact) is populated ONLY for CONFIRMED bookings; null otherwise.
+export interface BookingDetail {
+  id: string;
+  status: BookingStatus;
+  created_at: string;
+  room: { id: string; type: RoomType; price: number };
+  hostel: { id: string; name: string; location: string; address: string };
+  roommate_match_id: string | null;
+  owner: { name: string; contact: string } | null;
+}
+
 // POST /api/bookings -> booking placement result
 export interface BookingPlacement {
   id: string;

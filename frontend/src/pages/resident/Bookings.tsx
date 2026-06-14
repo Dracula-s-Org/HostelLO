@@ -58,7 +58,14 @@ export function Bookings() {
             <Card key={b.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-headline-md text-primary">{b.hostel.name}</h3>
+                  {b.status === "CONFIRMED" ? (
+                    <Link to={`/resident/bookings/${b.id}`} className="group inline-flex items-center gap-1">
+                      <h3 className="text-headline-md text-primary group-hover:underline">{b.hostel.name}</h3>
+                      <Icon name="arrow_forward" className="text-[18px] text-primary" />
+                    </Link>
+                  ) : (
+                    <h3 className="text-headline-md text-primary">{b.hostel.name}</h3>
+                  )}
                   <p className="text-label-md text-on-surface-variant">
                     {b.room.type === "SHARED" ? "Shared" : "Single"} room · ₹{b.room.price.toLocaleString("en-IN")}/mo
                   </p>
