@@ -14,13 +14,14 @@ from app.routers import (
     assets,
     auth,
     bookings,
+    hostels,
     kyc,
     owner_bookings,
     owners,
-    pages,
     residents,
     roommate_matches,
 )
+from app.spa import mount_spa
 from app.services.uploads import KYC_DIR, ROOM_DIR
 
 # Gated upload store lives outside the StaticFiles tree (see services/uploads.py).
@@ -46,24 +47,29 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
+    # React-only: the bundle is served same-origin, so no external script/style
+    # CDNs are allowlisted (HTMX/unpkg + Tailwind CDN retired with the templates).
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' https: data:; "
-        "script-src 'self' https://unpkg.com https://cdn.tailwindcss.com 'unsafe-inline'; "
-        "style-src 'self' https: 'unsafe-inline'; frame-ancestors 'none'",
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
     )
     return response
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(kyc.router)
 app.include_router(residents.router)
 app.include_router(bookings.router)
 app.include_router(roommate_matches.router)
+app.include_router(hostels.router)
 app.include_router(owners.router)
 app.include_router(owners.hostel_rooms_router)
 app.include_router(owner_bookings.router)
 app.include_router(assets.router)
+
+# SPA catch-all must be registered LAST so it only receives non-API routes.
+mount_spa(app)

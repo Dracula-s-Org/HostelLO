@@ -2,9 +2,7 @@
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import HTMLResponse
-from markupsafe import escape
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -21,9 +19,8 @@ from app.models import (
     User,
     UserRole,
 )
-from app.serializers import to_owner_self_view
+from app.serializers import to_hostel_view, to_owner_self_view, to_room_view
 from app.services.storage import save_room_image
-from app.templating import templates
 
 router = APIRouter(prefix="/api/owners", tags=["Owners"])
 # /api/hostels/{id}/rooms lives outside the /api/owners prefix (HLD §4.3)
@@ -35,7 +32,7 @@ def get_me(owner: OwnerProfile = Depends(get_current_owner)):
     return to_owner_self_view(owner)
 
 
-@router.post("/profile", response_class=HTMLResponse)
+@router.post("/profile")
 def upsert_profile(
     user: User = Depends(require_role(UserRole.OWNER.value)),
     session: Session = Depends(get_session),
@@ -50,12 +47,11 @@ def upsert_profile(
         profile = OwnerProfile(user_id=user.id, name=name, contact=contact)
     session.add(profile)
     session.commit()
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Owner profile saved.</div>"
-    )
+    session.refresh(profile)
+    return to_owner_self_view(profile)
 
 
-@router.post("/hostels", response_class=HTMLResponse)
+@router.post("/hostels")
 def create_hostel(
     user: User = Depends(require_kyc_verified),
     owner: OwnerProfile = Depends(get_current_owner),
@@ -93,21 +89,19 @@ def create_hostel(
     session.add(hostel)
     session.commit()
     session.refresh(hostel)
-    return HTMLResponse(
-        f"<div class='rounded bg-green-50 text-green-800 p-3'>Hostel <b>{escape(hostel.name)}</b> listed. "
-        "Add rooms from the dashboard.</div>"
-    )
+    return to_hostel_view(hostel)
 
 
-@router.get("/hostels", response_class=HTMLResponse)
+@router.get("/hostels")
 def list_hostels(
-    request: Request,
     owner: OwnerProfile = Depends(get_current_owner),
     session: Session = Depends(get_session),
 ):
-    """Dashboard matrix of owned properties (HTMX fragment)."""
+    """Owner dashboard: owned properties with their room matrix and a
+    pending-booking count per hostel, as JSON.
+    """
     hostels = session.exec(select(Hostel).where(Hostel.owner_id == owner.user_id)).all()
-    matrix = []
+    items = []
     for h in hostels:
         rooms = session.exec(select(Room).where(Room.hostel_id == h.id)).all()
         pending = session.exec(
@@ -115,11 +109,63 @@ def list_hostels(
             .where(Booking.status == BookingStatus.REQUESTED.value)
             .where(Booking.room_id.in_([r.id for r in rooms] or [uuid.uuid4()]))
         ).all()
-        matrix.append({"hostel": h, "rooms": rooms, "pending_count": len(pending)})
-    return templates.TemplateResponse(request, "owner/hostels.html", {"matrix": matrix})
+        items.append(
+            {
+                "hostel": to_hostel_view(h),
+                "rooms": [to_room_view(r) for r in rooms],
+                "pending_count": len(pending),
+            }
+        )
+    return {"hostels": items}
 
 
-@hostel_rooms_router.post("/{hostel_id}/rooms", response_class=HTMLResponse)
+@router.put("/hostels/{hostel_id}")
+def update_hostel(
+    hostel_id: uuid.UUID,
+    user: User = Depends(require_kyc_verified),
+    owner: OwnerProfile = Depends(get_current_owner),
+    session: Session = Depends(get_session),
+    name: str = Form(...),
+    address: str = Form(...),
+    location: str = Form(...),
+    gender_policy: str = Form(...),
+    listing_tier: str = Form(ListingTier.FREE.value),
+    allow_smoking: bool = Form(False),
+    allow_drinking: bool = Form(False),
+    veg_only: bool = Form(False),
+    min_age: Optional[int] = Form(None),
+    max_age: Optional[int] = Form(None),
+    amenities: Optional[str] = Form(None),
+):
+    """Edit a hostel — mirrors the create endpoint's fields, same ownership +
+    KYC-verified checks. Returns the updated hostel view.
+    """
+    hostel = session.get(Hostel, hostel_id)
+    if not hostel or hostel.owner_id != owner.user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hostel not found")
+    if gender_policy not in [g.value for g in GenderPolicy]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid gender_policy")
+    if listing_tier not in [t.value for t in ListingTier]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid listing_tier")
+
+    hostel.name = name
+    hostel.address = address
+    hostel.location = location.strip().lower()
+    hostel.gender_policy = gender_policy
+    hostel.listing_tier = listing_tier
+    hostel.allow_smoking = allow_smoking
+    hostel.allow_drinking = allow_drinking
+    hostel.veg_only = veg_only
+    hostel.min_age = min_age
+    hostel.max_age = max_age
+    hostel.amenities = [a.strip().lower() for a in (amenities or "").split(",") if a.strip()]
+    session.add(hostel)
+    session.commit()
+    session.refresh(hostel)
+    return to_hostel_view(hostel)
+
+
+@hostel_rooms_router.post("/{hostel_id}/rooms")
 async def create_room(
     hostel_id: uuid.UUID,
     user: User = Depends(require_kyc_verified),
@@ -151,7 +197,4 @@ async def create_room(
     session.add(room)
     session.commit()
     session.refresh(room)
-    return HTMLResponse(
-        f"<div class='rounded bg-green-50 text-green-800 p-3'>{escape(room.type)} room added to "
-        f"<b>{escape(hostel.name)}</b> at ₹{room.price:.0f} ({len(image_paths)} image(s)).</div>"
-    )
+    return to_room_view(room)
