@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}HostelLo — Owner{% endblock %}
+{% block nav %}
+<div class="flex items-center gap-4 text-sm">
+  <span>KYC: <b>{{ user.kyc_status }}</b></span>
+  <button hx-post="/api/auth/logout" class="bg-indigo-900 rounded px-3 py-1">Logout</button>
+</div>
+{% endblock %}
+{% block content %}
+<div class="grid md:grid-cols-2 gap-6">
+
+  <section class="bg-white rounded-xl shadow p-6 space-y-4">
+    <h2 class="text-lg font-bold">{{ 'Your profile' if profile else 'Complete your profile' }}</h2>
+    <form hx-post="/api/owners/profile" hx-target="#profile-result" class="space-y-3 text-sm">
+      <input name="name" placeholder="Business / owner name" value="{{ profile.name if profile else '' }}" class="border rounded p-2 w-full" required>
+      <input name="contact" placeholder="Contact (email or phone)" value="{{ profile.contact if profile else '' }}" class="border rounded p-2 w-full" required>
+      <button class="bg-indigo-600 text-white rounded px-4 py-2">Save profile</button>
+    </form>
+    <div id="profile-result"></div>
+
+    <h3 class="font-semibold pt-2">KYC verification</h3>
+    {% if user.kyc_status == 'VERIFIED' %}
+      <p class="text-sm text-green-700">✓ Verified — you can list hostels.</p>
+    {% else %}
+    <form hx-post="/api/kyc/submit" hx-target="#kyc-result" hx-encoding="multipart/form-data" class="flex gap-2 items-center text-sm">
+      <select name="doc_type" class="border rounded p-2">
+        <option value="AADHAAR">Aadhaar</option>
+        <option value="GST">GST certificate</option>
+      </select>
+      <input type="file" name="document" required class="text-xs">
+      <button class="bg-indigo-600 text-white rounded px-3 py-2">Submit</button>
+    </form>
+    <div id="kyc-result"></div>
+    {% endif %}
+  </section>
+
+  <section class="bg-white rounded-xl shadow p-6 space-y-3">
+    <h2 class="text-lg font-bold">List a hostel</h2>
+    <form hx-post="/api/owners/hostels" hx-target="#hostel-result" class="grid grid-cols-2 gap-3 text-sm">
+      <input name="name" placeholder="Hostel name" class="border rounded p-2 col-span-2" required>
+      <input name="address" placeholder="Full address" class="border rounded p-2 col-span-2" required>
+      <input name="location" placeholder="Area (e.g. koramangala)" class="border rounded p-2" required>
+      <select name="gender_policy" class="border rounded p-2" required>
+        <option value="COED">Co-ed</option>
+        <option value="MALE">Male only</option>
+        <option value="FEMALE">Female only</option>
+      </select>
+      <select name="listing_tier" class="border rounded p-2">
+        <option value="FREE">Free listing</option>
+        <option value="PREMIUM">Premium listing</option>
+      </select>
+      <input name="amenities" placeholder="Amenities (wifi, gym…)" class="border rounded p-2">
+      <input name="min_age" type="number" placeholder="Min age (optional)" class="border rounded p-2">
+      <input name="max_age" type="number" placeholder="Max age (optional)" class="border rounded p-2">
+      <input type="hidden" name="allow_smoking" value="false">
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_smoking" value="true"> Allow smoking</label>
+      <input type="hidden" name="allow_drinking" value="false">
+      <label class="flex items-center gap-2"><input type="checkbox" name="allow_drinking" value="true"> Allow drinking</label>
+      <input type="hidden" name="veg_only" value="false">
+      <label class="flex items-center gap-2"><input type="checkbox" name="veg_only" value="true"> Veg-only</label>
+      <button class="bg-indigo-600 text-white rounded px-4 py-2 col-span-2">Create hostel</button>
+    </form>
+    <div id="hostel-result"></div>
+  </section>
+
+  <section class="bg-white rounded-xl shadow p-6 space-y-3 md:col-span-2">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-bold">Your properties</h2>
+      <button hx-get="/api/owners/hostels" hx-target="#hostel-matrix"
+              class="bg-indigo-600 text-white rounded px-3 py-1 text-sm">Refresh</button>
+    </div>
+    <div id="hostel-matrix" hx-get="/api/owners/hostels" hx-trigger="load" hx-swap="innerHTML"></div>
+  </section>
+
+  <section class="bg-white rounded-xl shadow p-6 space-y-3 md:col-span-2">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-bold">Incoming applications</h2>
+      <button hx-get="/api/owners/bookings" hx-target="#review-queue"
+              class="bg-indigo-600 text-white rounded px-3 py-1 text-sm">Refresh</button>
+    </div>
+    <div id="review-queue" hx-get="/api/owners/bookings" hx-trigger="load" hx-swap="innerHTML"></div>
+  </section>
+
+</div>
+{% endblock %}
