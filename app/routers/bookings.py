@@ -6,7 +6,6 @@ or an HTMX form field `roomId`.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -23,7 +22,6 @@ from app.models import (
 from app.serializers import to_candidate_view
 from app.services.booking_lifecycle import cancel_booking, create_booking
 from app.services.matchmaking import build_candidate_pool, rank_pool
-from app.templating import templates
 
 router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
@@ -45,7 +43,7 @@ async def _extract_room_id(request: Request) -> uuid.UUID:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="roomId must be a UUID")
 
 
-@router.post("", response_class=HTMLResponse)
+@router.post("")
 async def place_booking(
     request: Request,
     user: User = Depends(require_kyc_verified),
@@ -56,23 +54,19 @@ async def place_booking(
     booking, match = create_booking(session, profile, user, room_id)
     room = session.get(Room, booking.room_id)
 
-    if match:
-        return HTMLResponse(
-            "<div class='rounded bg-green-50 text-green-800 p-3'>Booking requested with your "
-            "pre-decided roommate — both requests are linked and awaiting owner approval.</div>"
-        )
-    if room.type == RoomType.SHARED.value:
-        return HTMLResponse(
-            "<div class='rounded bg-green-50 text-green-800 p-3'>Booking requested. "
-            f"<a class='underline font-semibold' href='#' hx-get='/api/bookings/{booking.id}/roommate-recommendations' "
-            "hx-target='#roommate-panel' hx-swap='innerHTML'>Find a compatible roommate →</a></div>"
-        )
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Booking requested — awaiting owner approval.</div>"
-    )
+    # `prebooked_match` tells the client a pre-decided roommate was auto-linked;
+    # `is_shared` (without a match) is its cue to offer the roommate-finder flow.
+    return {
+        "id": str(booking.id),
+        "status": booking.status,
+        "room_id": str(booking.room_id),
+        "roommate_match_id": str(booking.roommate_match_id) if booking.roommate_match_id else None,
+        "is_shared": room.type == RoomType.SHARED.value,
+        "prebooked_match": match is not None,
+    }
 
 
-@router.post("/{booking_id}/cancel", response_class=HTMLResponse)
+@router.post("/{booking_id}/cancel")
 def cancel(
     booking_id: uuid.UUID,
     profile: ResidentProfile = Depends(get_current_resident),
@@ -82,13 +76,12 @@ def cancel(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     outcome = cancel_booking(session, booking, profile)
-    return HTMLResponse(f"<div class='rounded bg-amber-50 text-amber-800 p-3'>{outcome}</div>")
+    return {"id": str(booking_id), "status": booking.status, "detail": outcome}
 
 
-@router.get("/{booking_id}/roommate-recommendations", response_class=HTMLResponse)
+@router.get("/{booking_id}/roommate-recommendations")
 def roommate_recommendations(
     booking_id: uuid.UUID,
-    request: Request,
     profile: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
 ):
@@ -111,16 +104,11 @@ def roommate_recommendations(
     ranked = rank_pool(profile, pool)
     candidates = [to_candidate_view(p, r["overall_score"], r["breakdown"]) for p, r in ranked]
 
-    return templates.TemplateResponse(
-        request,
-        "resident/roommates.html",
-        {"candidates": candidates, "booking": booking},
-    )
+    return {"candidates": candidates}
 
 
-@router.get("/mine", response_class=HTMLResponse)
+@router.get("/mine")
 def my_bookings(
-    request: Request,
     profile: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
 ):
@@ -131,5 +119,15 @@ def my_bookings(
         .where(Hostel.id == Room.hostel_id)
         .order_by(Booking.created_at.desc())
     ).all()
-    items = [{"booking": b, "room": r, "hostel": h} for b, r, h in rows]
-    return templates.TemplateResponse(request, "resident/bookings.html", {"items": items})
+    bookings = [
+        {
+            "id": str(b.id),
+            "status": b.status,
+            "created_at": b.created_at.isoformat(),
+            "room": {"id": str(r.id), "type": r.type, "price": r.price},
+            "hostel": {"id": str(h.id), "name": h.name, "location": h.location},
+            "roommate_match_id": str(b.roommate_match_id) if b.roommate_match_id else None,
+        }
+        for b, r, h in rows
+    ]
+    return {"bookings": bookings}
