@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
+from markupsafe import escape
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -20,6 +21,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.serializers import to_owner_self_view
 from app.services.storage import save_room_image
 from app.templating import templates
 
@@ -30,7 +32,7 @@ hostel_rooms_router = APIRouter(prefix="/api/hostels", tags=["Owners"])
 
 @router.get("/me")
 def get_me(owner: OwnerProfile = Depends(get_current_owner)):
-    return owner.model_dump(mode="json")
+    return to_owner_self_view(owner)
 
 
 @router.post("/profile", response_class=HTMLResponse)
@@ -92,7 +94,7 @@ def create_hostel(
     session.commit()
     session.refresh(hostel)
     return HTMLResponse(
-        f"<div class='rounded bg-green-50 text-green-800 p-3'>Hostel <b>{hostel.name}</b> listed. "
+        f"<div class='rounded bg-green-50 text-green-800 p-3'>Hostel <b>{escape(hostel.name)}</b> listed. "
         "Add rooms from the dashboard.</div>"
     )
 
@@ -150,6 +152,6 @@ async def create_room(
     session.commit()
     session.refresh(room)
     return HTMLResponse(
-        f"<div class='rounded bg-green-50 text-green-800 p-3'>{room.type} room added to "
-        f"<b>{hostel.name}</b> at ₹{room.price:.0f} ({len(image_paths)} image(s)).</div>"
+        f"<div class='rounded bg-green-50 text-green-800 p-3'>{escape(room.type)} room added to "
+        f"<b>{escape(hostel.name)}</b> at ₹{room.price:.0f} ({len(image_paths)} image(s)).</div>"
     )

@@ -3,7 +3,6 @@
 Local files never serve via raw paths — these routes gate every read.
 KYC documents are purged on decision, so reads usually return 410 GONE.
 """
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +12,7 @@ from sqlmodel import Session
 from app.db import get_session
 from app.dependencies import get_current_owner, get_current_user
 from app.models import Hostel, KycVerification, OwnerProfile, Room, User
+from app.services.uploads import resolve_upload_path
 
 router = APIRouter(prefix="/api/assets", tags=["Assets"])
 
@@ -36,8 +36,8 @@ def room_image(
     ref = paths[index]
     if ref.startswith("http"):
         return RedirectResponse(ref)
-    local = ref.lstrip("/")
-    if not os.path.isfile(local):
+    local = resolve_upload_path(ref)
+    if not local:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image missing from disk")
     return FileResponse(local)
 
@@ -58,6 +58,7 @@ def kyc_document(
             status_code=status.HTTP_410_GONE,
             detail="Document purged after decision (DPDP purpose-bound deletion).",
         )
-    if not os.path.isfile(record.doc_ref):
+    local = resolve_upload_path(record.doc_ref)
+    if not local:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document missing from disk")
-    return FileResponse(record.doc_ref)
+    return FileResponse(local, content_disposition_type="attachment")
