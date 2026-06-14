@@ -113,7 +113,8 @@ def accept_roommate_match(
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.resident_b != profile.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the invited resident can accept")
+        # 404: don't reveal that a match with this id exists for other residents.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.status != MatchStatus.PROPOSED.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=f"Match is {match.status}, not PROPOSED."
@@ -165,7 +166,8 @@ def reject_roommate_match(
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if profile.user_id not in (match.resident_a, match.resident_b):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant of this match")
+        # 404: don't reveal that a match with this id exists for other residents.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.status == MatchStatus.CONFIRMED.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

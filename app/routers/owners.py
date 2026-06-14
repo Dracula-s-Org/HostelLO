@@ -2,9 +2,10 @@
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlmodel import Session, select
 
+from app.config import config
 from app.db import get_session
 from app.dependencies import get_current_owner, require_kyc_verified, require_role
 from app.models import (
@@ -19,6 +20,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.ratelimit import limiter
 from app.serializers import to_hostel_view, to_owner_self_view, to_room_view
 from app.services.storage import save_room_image
 
@@ -166,7 +168,9 @@ def update_hostel(
 
 
 @hostel_rooms_router.post("/{hostel_id}/rooms")
+@limiter.limit("20/minute")  # per-IP cap on the upload-bearing route
 async def create_room(
+    request: Request,
     hostel_id: uuid.UUID,
     user: User = Depends(require_kyc_verified),
     owner: OwnerProfile = Depends(get_current_owner),
@@ -182,10 +186,30 @@ async def create_room(
     if type not in [t.value for t in RoomType]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid room type")
 
+    # Per-owner abuse cap: an owner can't grow rooms (and their images) without
+    # bound and exhaust the free-tier disk.
+    owned_hostel_ids = session.exec(
+        select(Hostel.id).where(Hostel.owner_id == owner.user_id)
+    ).all()
+    room_count = len(
+        session.exec(select(Room).where(Room.hostel_id.in_(owned_hostel_ids))).all()
+    )
+    if room_count >= config.MAX_ROOMS_PER_OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Room limit reached ({config.MAX_ROOMS_PER_OWNER} per owner).",
+        )
+
+    submitted = [img for img in images if img and img.filename]
+    if len(submitted) > config.MAX_IMAGES_PER_ROOM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many images (max {config.MAX_IMAGES_PER_ROOM} per room).",
+        )
+
     image_paths = []
-    for img in images:
-        if img and img.filename:
-            image_paths.append(await save_room_image(img))
+    for img in submitted:
+        image_paths.append(await save_room_image(img))
 
     room = Room(
         hostel_id=hostel.id,

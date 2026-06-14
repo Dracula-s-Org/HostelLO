@@ -16,6 +16,10 @@ psycopg2-binary>=2.9.9
 # avoids python-jose's unmaintained `ecdsa` dependency (CVE-2024-23342).
 PyJWT>=2.9,<3.0
 
+# IP-based rate limiting (DoS / SMS-toll-fraud defense). In-memory store is fine
+# for the single-worker deploy (HLD §7.3); needs Redis if workers > 1.
+slowapi>=0.1.9,<0.2
+
 # Room image storage (Render free tier has no persistent disk)
 cloudinary>=1.41
 

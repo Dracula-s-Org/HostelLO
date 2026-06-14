@@ -49,10 +49,10 @@ def kyc_document(
     session: Session = Depends(get_session),
 ):
     record = session.get(KycVerification, verification_id)
-    if not record:
+    # 404 (not 403) for a non-owned record too, so the response never confirms
+    # that a document with this id exists for another user (enumeration guard).
+    if not record or record.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verification not found")
-    if record.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your document")
     if record.doc_ref == "[PURGED]":
         raise HTTPException(
             status_code=status.HTTP_410_GONE,

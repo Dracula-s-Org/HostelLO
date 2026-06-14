@@ -13,11 +13,53 @@ from app.config import config
 from app.db import get_session
 from app.dependencies import get_current_resident, require_role
 from app.engine.matching import recommend_hostels
-from app.models import Hostel, ResidentProfile, Room, User, UserRole
+from app.models import (
+    DietType,
+    GenderType,
+    Hostel,
+    ResidentProfile,
+    Room,
+    SleepSchedule,
+    SocialType,
+    User,
+    UserRole,
+)
 from app.serializers import to_recommendation_view, to_resident_self_view
 from app.services.engine_adapters import hostel_to_engine, resident_to_engine
+from app.validators import validate_enum, validate_phone
 
 router = APIRouter(prefix="/api/residents", tags=["Residents"])
+
+
+def _validate_profile_enums(
+    *,
+    gender: Optional[str],
+    sleep_schedule: Optional[str],
+    diet: Optional[str],
+    social_type: Optional[str],
+    prebooked_roommate_phone: Optional[str],
+) -> None:
+    """Allowlist the free-`str` domain fields (the DB columns don't constrain
+    them) — only the values actually present are checked, so PUT can patch a
+    single field. Mirrors owners.py's gender_policy/listing_tier checks."""
+    if gender is not None:
+        validate_enum(gender, GenderType, "gender")
+    if sleep_schedule is not None:
+        validate_enum(sleep_schedule, SleepSchedule, "sleep_schedule")
+    if diet is not None:
+        validate_enum(diet, DietType, "diet")
+    if social_type is not None:
+        validate_enum(social_type, SocialType, "social_type")
+    if prebooked_roommate_phone and prebooked_roommate_phone.strip():
+        validate_phone(prebooked_roommate_phone.strip(), "roommate phone")
+
+
+def _assert_budget_order(profile: ResidentProfile) -> None:
+    if profile.budget_min > profile.budget_max:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="budget_min cannot exceed budget_max",
+        )
 
 
 @router.get("/me")
@@ -97,12 +139,12 @@ def _apply_profile_fields(
 def create_profile(
     user: User = Depends(require_role(UserRole.RESIDENT.value)),
     session: Session = Depends(get_session),
-    name: str = Form(...),
-    age: int = Form(...),
+    name: str = Form(..., max_length=100),
+    age: int = Form(..., ge=16, le=120),
     gender: str = Form(...),
-    budget_min: float = Form(...),
-    budget_max: float = Form(...),
-    preferred_location: str = Form(...),
+    budget_min: float = Form(..., ge=0),
+    budget_max: float = Form(..., ge=0),
+    preferred_location: str = Form(..., max_length=150),
     sleep_schedule: str = Form(...),
     cleanliness: int = Form(..., ge=1, le=5),
     diet: str = Form(...),
@@ -114,7 +156,7 @@ def create_profile(
     smoking: bool = Form(False),
     drinking: bool = Form(False),
     seeking_shared: bool = Form(True),
-    prebooked_roommate_phone: Optional[str] = Form(None),
+    prebooked_roommate_phone: Optional[str] = Form(None, max_length=15),
     amenity_preferences: Optional[str] = Form(None),
 ):
     existing = session.get(ResidentProfile, user.id)
@@ -123,6 +165,13 @@ def create_profile(
             status_code=status.HTTP_409_CONFLICT,
             detail="Profile already exists; use PUT /api/residents/profile.",
         )
+    _validate_profile_enums(
+        gender=gender,
+        sleep_schedule=sleep_schedule,
+        diet=diet,
+        social_type=social_type,
+        prebooked_roommate_phone=prebooked_roommate_phone,
+    )
     profile = ResidentProfile(
         user_id=user.id,
         name=name,
@@ -147,6 +196,7 @@ def create_profile(
             a.strip().lower() for a in (amenity_preferences or "").split(",") if a.strip()
         ],
     )
+    _assert_budget_order(profile)
     session.add(profile)
     session.commit()
     session.refresh(profile)
@@ -157,12 +207,12 @@ def create_profile(
 def update_profile(
     current_resident: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
-    name: Optional[str] = Form(None),
-    age: Optional[int] = Form(None),
+    name: Optional[str] = Form(None, max_length=100),
+    age: Optional[int] = Form(None, ge=16, le=120),
     gender: Optional[str] = Form(None),
-    budget_min: Optional[float] = Form(None),
-    budget_max: Optional[float] = Form(None),
-    preferred_location: Optional[str] = Form(None),
+    budget_min: Optional[float] = Form(None, ge=0),
+    budget_max: Optional[float] = Form(None, ge=0),
+    preferred_location: Optional[str] = Form(None, max_length=150),
     smoking: Optional[bool] = Form(None),
     drinking: Optional[bool] = Form(None),
     sleep_schedule: Optional[str] = Form(None),
@@ -174,9 +224,16 @@ def update_profile(
     fitness_freq: Optional[int] = Form(None, ge=1, le=4),
     visitors_freq: Optional[int] = Form(None, ge=1, le=4),
     seeking_shared: Optional[bool] = Form(None),
-    prebooked_roommate_phone: Optional[str] = Form(None),
+    prebooked_roommate_phone: Optional[str] = Form(None, max_length=15),
     amenity_preferences: Optional[str] = Form(None),
 ):
+    _validate_profile_enums(
+        gender=gender,
+        sleep_schedule=sleep_schedule,
+        diet=diet,
+        social_type=social_type,
+        prebooked_roommate_phone=prebooked_roommate_phone,
+    )
     _apply_profile_fields(
         current_resident,
         name=name,
@@ -199,6 +256,7 @@ def update_profile(
         prebooked_roommate_phone=prebooked_roommate_phone,
         amenity_preferences=amenity_preferences,
     )
+    _assert_budget_order(current_resident)
     session.add(current_resident)
     session.commit()
     session.refresh(current_resident)

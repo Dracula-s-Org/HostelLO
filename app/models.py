@@ -81,6 +81,16 @@ class MatchStatus(str, Enum):
     REJECTED = "REJECTED"
 
 
+class DocType(str, Enum):
+    """Accepted KYC identity documents (request-layer allowlist; the DB column
+    stays free TEXT for forward-compat)."""
+    AADHAAR = "AADHAAR"
+    PAN = "PAN"
+    PASSPORT = "PASSPORT"
+    DRIVING_LICENSE = "DRIVING_LICENSE"
+    VOTER_ID = "VOTER_ID"
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
