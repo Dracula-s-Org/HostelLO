@@ -51,6 +51,10 @@ class OperationalConfig(BaseSettings):
     # Upload hardening
     MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5 MiB
 
+    # Built React bundle (Vite output). FastAPI serves index.html for non-API
+    # routes and the hashed assets under <dist>/assets.
+    FRONTEND_DIST: str = "frontend/dist"
+
     class Config:
         env_file = ".env"
 
