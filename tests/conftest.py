@@ -50,11 +50,16 @@ def login(client: TestClient, phone: str, role: str) -> None:
     assert r.status_code == 200, r.text
 
 
+# Minimal valid JPEG header — uploads are now validated by magic bytes, not the
+# client-supplied content-type, so the fixture must look like a real image.
+_JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01" + b"\x00" * 32
+
+
 def submit_kyc(client: TestClient) -> None:
     r = client.post(
         "/api/kyc/submit",
         data={"doc_type": "AADHAAR"},
-        files={"document": ("id.jpg", b"fake-image-bytes", "image/jpeg")},
+        files={"document": ("id.jpg", _JPEG_BYTES, "image/jpeg")},
     )
     assert r.status_code == 200, r.text
 

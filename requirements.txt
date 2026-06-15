@@ -13,8 +13,9 @@ pydantic-settings>=2.7,<3.0
 # Database driver for the Neon Postgres target (local dev uses SQLite, no driver needed)
 psycopg2-binary>=2.9.9
 
-# Auth (JWT in httpOnly cookie, TDD §10)
-python-jose>=3.3,<4.0
+# Auth (JWT in httpOnly cookie, TDD §10). PyJWT is actively maintained and
+# avoids python-jose's unmaintained `ecdsa` dependency (CVE-2024-23342).
+PyJWT>=2.9,<3.0
 
 # Room image storage (Render free tier has no persistent disk)
 cloudinary>=1.41

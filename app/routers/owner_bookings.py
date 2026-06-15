@@ -81,7 +81,7 @@ def approve(
     session: Session = Depends(get_session),
 ):
     _owned_booking(session, owner, booking_id)
-    result = commit_booking_allocation(session, booking_id)
+    result = commit_booking_allocation(session, booking_id, owner_user_id=owner.user_id)
     if result["result"] == "already_confirmed":
         return HTMLResponse(
             "<div class='rounded bg-blue-50 text-blue-800 p-3'>Already approved.</div>"
@@ -104,7 +104,7 @@ def reject(
     session: Session = Depends(get_session),
 ):
     _owned_booking(session, owner, booking_id)
-    result = reject_booking(session, booking_id)
+    result = reject_booking(session, booking_id, owner_user_id=owner.user_id)
     return HTMLResponse(
         f"<div class='rounded bg-amber-50 text-amber-800 p-3'>Application rejected "
         f"({result['rejected']} booking(s)).</div>"

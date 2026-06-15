@@ -7,7 +7,7 @@ import re
 from sqlmodel import select
 
 from app.models import Booking, BookingStatus, MatchStatus, Room, RoomStatus, RoommateMatch
-from tests.conftest import create_resident_profile, login, submit_kyc
+from tests.conftest import _JPEG_BYTES, create_resident_profile, login, submit_kyc
 
 
 def test_golden_path(make_client, session):
@@ -39,7 +39,7 @@ def test_golden_path(make_client, session):
     r = owner.post(
         f"/api/hostels/{hostel.id}/rooms",
         data={"type": "SHARED", "capacity": "2", "price": "6000"},
-        files={"images": ("room.jpg", b"fake-room-image", "image/jpeg")},
+        files={"images": ("room.jpg", _JPEG_BYTES, "image/jpeg")},
     )
     assert r.status_code == 200, r.text
     room = session.exec(select(Room)).first()

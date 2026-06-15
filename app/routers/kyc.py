@@ -14,10 +14,9 @@ from app.db import get_session
 from app.dependencies import get_current_user
 from app.models import KycStatus, KycVerification, User
 from app.services.kyc import kyc_provider
+from app.services.uploads import KYC_DIR, read_capped, sniff_document_ext
 
 router = APIRouter(prefix="/api/kyc", tags=["KYC"])
-
-KYC_UPLOAD_DIR = os.path.join("static", "uploads", "kyc")
 
 
 def apply_kyc_decision(session: Session, user: User, record: KycVerification, decision: str) -> None:
@@ -41,11 +40,14 @@ async def submit_kyc(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    os.makedirs(KYC_UPLOAD_DIR, exist_ok=True)
-    safe_name = f"{uuid.uuid4().hex}_{os.path.basename(document.filename or 'doc')}"
-    path = os.path.join(KYC_UPLOAD_DIR, safe_name)
+    data = await read_capped(document)
+    ext = sniff_document_ext(data)  # raises 400 if not a real PDF/image
+    os.makedirs(KYC_DIR, exist_ok=True)
+    # Filename is fully server-generated — the client filename is never trusted.
+    safe_name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(KYC_DIR, safe_name)
     with open(path, "wb") as fh:
-        fh.write(await document.read())
+        fh.write(data)
 
     record = KycVerification(user_id=user.id, doc_type=doc_type, doc_ref=path)
     user.kyc_status = KycStatus.PENDING.value
