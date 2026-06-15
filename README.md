@@ -32,6 +32,6 @@ Tests: `.venv/bin/python -m pytest`
 - `app/services/` — booking allocation (ordered-lock transaction), lifecycle cascades, candidate pool, storage
 - `app/routers/` — auth (OTP→JWT cookie), KYC mock, resident/owner verticals, assets
 - `app/serializers.py` — shared DPDP data-gating views
-- `templates/` — Jinja2 + HTMX + Tailwind frontend
+- `app/spa.py` — serves the built React bundle (`frontend/dist`) + a catch-all so client-side routes resolve; the API is JSON-only (React frontend)
 
 Deployment (Render + Neon + Cloudinary): see [DEPLOY.md](DEPLOY.md).
