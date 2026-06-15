@@ -2,12 +2,10 @@
 owner lists → resident discovers → shared booking → roommate consent →
 owner approves → pair CONFIRMED.
 """
-import re
-
 from sqlmodel import select
 
 from app.models import Booking, BookingStatus, MatchStatus, Room, RoomStatus, RoommateMatch
-from tests.conftest import create_resident_profile, login, submit_kyc
+from tests.conftest import _JPEG_BYTES, create_resident_profile, login, submit_kyc
 
 
 def test_golden_path(make_client, session):
@@ -39,7 +37,7 @@ def test_golden_path(make_client, session):
     r = owner.post(
         f"/api/hostels/{hostel.id}/rooms",
         data={"type": "SHARED", "capacity": "2", "price": "6000"},
-        files={"images": ("room.jpg", b"fake-room-image", "image/jpeg")},
+        files={"images": ("room.jpg", _JPEG_BYTES, "image/jpeg")},
     )
     assert r.status_code == 200, r.text
     room = session.exec(select(Room)).first()
@@ -51,10 +49,13 @@ def test_golden_path(make_client, session):
     create_resident_profile(res_a, name="Aarav Sharma")
     submit_kyc(res_a)
 
-    # 3. Resident A sees a filtered, ranked list
+    # 3. Resident A sees a filtered, ranked list (JSON)
     r = res_a.get("/api/residents/recommendations")
     assert r.status_code == 200
-    assert "Sunrise Residency" in r.text
+    results = r.json()["results"]
+    assert any(c["hostel"]["name"] == "Sunrise Residency" for c in results)
+    # rooms expose image_count, never raw paths
+    assert all("image_paths" not in rm for c in results for rm in c["rooms"])
 
     # 4. Resident A books the SHARED room
     r = res_a.post("/api/bookings", json={"roomId": str(room.id)})
@@ -71,10 +72,11 @@ def test_golden_path(make_client, session):
     # 6. A sees B as a DPDP-redacted candidate (first name only, no phone)
     r = res_a.get(f"/api/bookings/{booking_a.id}/roommate-recommendations")
     assert r.status_code == 200, r.text
-    assert "Vihaan" in r.text
+    candidates = r.json()["candidates"]
+    assert any(c["first_name"] == "Vihaan" for c in candidates)
     assert "8000000003" not in r.text  # phone never leaks pre-confirmation
     assert "Patel" not in r.text  # last name hidden in discovery
-    candidate_id = re.search(r'name="candidateId" value="([0-9a-f-]+)"', r.text).group(1)
+    candidate_id = next(c["candidate_id"] for c in candidates if c["first_name"] == "Vihaan")
 
     # 7. A proposes, B accepts -> match CONFIRMED + linked Booking B auto-created
     r = res_a.post("/api/roommate-matches", data={"candidateId": candidate_id})
@@ -91,10 +93,13 @@ def test_golden_path(make_client, session):
     assert len(bookings) == 2
     assert all(b.roommate_match_id == match.id for b in bookings)
 
-    # 8. Owner sees the application with redacted applicant data
+    # 8. Owner sees the application with redacted applicant data (JSON)
     r = owner.get("/api/owners/bookings")
     assert r.status_code == 200
-    assert "Aarav" in r.text and "Sharma" not in r.text
+    queue = r.json()["queue"]
+    first_names = [item["applicant"]["first_name"] for item in queue]
+    assert "Aarav" in first_names
+    assert "Sharma" not in r.text  # last name never sent pre-approval
 
     # 9. Owner approves once -> both bookings CONFIRMED, room FULL
     r = owner.post(f"/api/bookings/{booking_a.id}/approve")
