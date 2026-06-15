@@ -6,8 +6,7 @@ and duck-typed, so ORM rows are adapted to its expected dict shape.
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from sqlmodel import Session, select
 
 from app.config import config
@@ -15,16 +14,18 @@ from app.db import get_session
 from app.dependencies import get_current_resident, require_role
 from app.engine.matching import recommend_hostels
 from app.models import Hostel, ResidentProfile, Room, User, UserRole
+from app.serializers import to_recommendation_view, to_resident_self_view
 from app.services.engine_adapters import hostel_to_engine, resident_to_engine
-from app.templating import templates
 
 router = APIRouter(prefix="/api/residents", tags=["Residents"])
 
 
 @router.get("/me")
 def get_me(current_resident: ResidentProfile = Depends(get_current_resident)):
-    """The resident's own profile — self-access, no DPDP redaction needed."""
-    return current_resident.model_dump(mode="json")
+    """The resident's own profile via an explicit allowlist (no raw model dump —
+    a pre-booked roommate's phone is third-party PII and is never echoed in full).
+    """
+    return to_resident_self_view(current_resident)
 
 
 def _apply_profile_fields(
@@ -92,7 +93,7 @@ def _apply_profile_fields(
         ]
 
 
-@router.post("/profile", response_class=HTMLResponse)
+@router.post("/profile")
 def create_profile(
     user: User = Depends(require_role(UserRole.RESIDENT.value)),
     session: Session = Depends(get_session),
@@ -148,13 +149,11 @@ def create_profile(
     )
     session.add(profile)
     session.commit()
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Profile saved. "
-        "Head to <b>Recommendations</b> to find your hostel.</div>"
-    )
+    session.refresh(profile)
+    return to_resident_self_view(profile)
 
 
-@router.put("/profile", response_class=HTMLResponse)
+@router.put("/profile")
 def update_profile(
     current_resident: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
@@ -202,16 +201,16 @@ def update_profile(
     )
     session.add(current_resident)
     session.commit()
-    return HTMLResponse("<div class='rounded bg-green-50 text-green-800 p-3'>Profile updated.</div>")
+    session.refresh(current_resident)
+    return to_resident_self_view(current_resident)
 
 
-@router.get("/recommendations", response_class=HTMLResponse)
+@router.get("/recommendations")
 def get_recommendations(
-    request: Request,
     current_resident: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
 ):
-    """Ranked, hard-filtered hostels rendered as an HTMX fragment."""
+    """Ranked, hard-filtered hostels as JSON for the recommendations screen."""
     hostels = session.exec(select(Hostel)).all()
     rooms_by_hostel: dict = {}
     for room in session.exec(select(Room)).all():
@@ -221,24 +220,20 @@ def get_recommendations(
     ranked = recommend_hostels(resident_to_engine(current_resident), engine_input, config)
 
     hostels_by_id = {str(h.id): h for h in hostels}
-    cards = []
+    results = []
     for r in ranked:
         hostel = hostels_by_id.get(r["hostel_id"])
         if not hostel:
             continue
-        cards.append(
-            {
-                "hostel": hostel,
-                "rooms": rooms_by_hostel.get(hostel.id, []),
-                "score": r["final_score"],
-                "price_fit": r["price_fit"],
-                "location_fit": r["location_fit"],
-                "amenity_fit": r["amenity_fit"],
-            }
+        results.append(
+            to_recommendation_view(
+                hostel,
+                rooms_by_hostel.get(hostel.id, []),
+                r["final_score"],
+                r["price_fit"],
+                r["location_fit"],
+                r["amenity_fit"],
+            )
         )
 
-    return templates.TemplateResponse(
-        request,
-        "resident/recommendations.html",
-        {"cards": cards},
-    )
+    return {"results": results}
