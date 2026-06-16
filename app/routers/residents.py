@@ -6,25 +6,68 @@ and duck-typed, so ORM rows are adapted to its expected dict shape.
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from sqlmodel import Session, select
 
 from app.config import config
 from app.db import get_session
 from app.dependencies import get_current_resident, require_role
 from app.engine.matching import recommend_hostels
-from app.models import Hostel, ResidentProfile, Room, User, UserRole
+from app.models import (
+    DietType,
+    GenderType,
+    Hostel,
+    ResidentProfile,
+    Room,
+    SleepSchedule,
+    SocialType,
+    User,
+    UserRole,
+)
+from app.serializers import to_recommendation_view, to_resident_self_view
 from app.services.engine_adapters import hostel_to_engine, resident_to_engine
-from app.templating import templates
+from app.validators import validate_enum, validate_phone
 
 router = APIRouter(prefix="/api/residents", tags=["Residents"])
 
 
+def _validate_profile_enums(
+    *,
+    gender: Optional[str],
+    sleep_schedule: Optional[str],
+    diet: Optional[str],
+    social_type: Optional[str],
+    prebooked_roommate_phone: Optional[str],
+) -> None:
+    """Allowlist the free-`str` domain fields (the DB columns don't constrain
+    them) — only the values actually present are checked, so PUT can patch a
+    single field. Mirrors owners.py's gender_policy/listing_tier checks."""
+    if gender is not None:
+        validate_enum(gender, GenderType, "gender")
+    if sleep_schedule is not None:
+        validate_enum(sleep_schedule, SleepSchedule, "sleep_schedule")
+    if diet is not None:
+        validate_enum(diet, DietType, "diet")
+    if social_type is not None:
+        validate_enum(social_type, SocialType, "social_type")
+    if prebooked_roommate_phone and prebooked_roommate_phone.strip():
+        validate_phone(prebooked_roommate_phone.strip(), "roommate phone")
+
+
+def _assert_budget_order(profile: ResidentProfile) -> None:
+    if profile.budget_min > profile.budget_max:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="budget_min cannot exceed budget_max",
+        )
+
+
 @router.get("/me")
 def get_me(current_resident: ResidentProfile = Depends(get_current_resident)):
-    """The resident's own profile — self-access, no DPDP redaction needed."""
-    return current_resident.model_dump(mode="json")
+    """The resident's own profile via an explicit allowlist (no raw model dump —
+    a pre-booked roommate's phone is third-party PII and is never echoed in full).
+    """
+    return to_resident_self_view(current_resident)
 
 
 def _apply_profile_fields(
@@ -92,16 +135,16 @@ def _apply_profile_fields(
         ]
 
 
-@router.post("/profile", response_class=HTMLResponse)
+@router.post("/profile")
 def create_profile(
     user: User = Depends(require_role(UserRole.RESIDENT.value)),
     session: Session = Depends(get_session),
-    name: str = Form(...),
-    age: int = Form(...),
+    name: str = Form(..., max_length=100),
+    age: int = Form(..., ge=16, le=120),
     gender: str = Form(...),
-    budget_min: float = Form(...),
-    budget_max: float = Form(...),
-    preferred_location: str = Form(...),
+    budget_min: float = Form(..., ge=0),
+    budget_max: float = Form(..., ge=0),
+    preferred_location: str = Form(..., max_length=150),
     sleep_schedule: str = Form(...),
     cleanliness: int = Form(..., ge=1, le=5),
     diet: str = Form(...),
@@ -113,7 +156,7 @@ def create_profile(
     smoking: bool = Form(False),
     drinking: bool = Form(False),
     seeking_shared: bool = Form(True),
-    prebooked_roommate_phone: Optional[str] = Form(None),
+    prebooked_roommate_phone: Optional[str] = Form(None, max_length=15),
     amenity_preferences: Optional[str] = Form(None),
 ):
     existing = session.get(ResidentProfile, user.id)
@@ -122,6 +165,13 @@ def create_profile(
             status_code=status.HTTP_409_CONFLICT,
             detail="Profile already exists; use PUT /api/residents/profile.",
         )
+    _validate_profile_enums(
+        gender=gender,
+        sleep_schedule=sleep_schedule,
+        diet=diet,
+        social_type=social_type,
+        prebooked_roommate_phone=prebooked_roommate_phone,
+    )
     profile = ResidentProfile(
         user_id=user.id,
         name=name,
@@ -146,24 +196,23 @@ def create_profile(
             a.strip().lower() for a in (amenity_preferences or "").split(",") if a.strip()
         ],
     )
+    _assert_budget_order(profile)
     session.add(profile)
     session.commit()
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Profile saved. "
-        "Head to <b>Recommendations</b> to find your hostel.</div>"
-    )
+    session.refresh(profile)
+    return to_resident_self_view(profile)
 
 
-@router.put("/profile", response_class=HTMLResponse)
+@router.put("/profile")
 def update_profile(
     current_resident: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
-    name: Optional[str] = Form(None),
-    age: Optional[int] = Form(None),
+    name: Optional[str] = Form(None, max_length=100),
+    age: Optional[int] = Form(None, ge=16, le=120),
     gender: Optional[str] = Form(None),
-    budget_min: Optional[float] = Form(None),
-    budget_max: Optional[float] = Form(None),
-    preferred_location: Optional[str] = Form(None),
+    budget_min: Optional[float] = Form(None, ge=0),
+    budget_max: Optional[float] = Form(None, ge=0),
+    preferred_location: Optional[str] = Form(None, max_length=150),
     smoking: Optional[bool] = Form(None),
     drinking: Optional[bool] = Form(None),
     sleep_schedule: Optional[str] = Form(None),
@@ -175,9 +224,16 @@ def update_profile(
     fitness_freq: Optional[int] = Form(None, ge=1, le=4),
     visitors_freq: Optional[int] = Form(None, ge=1, le=4),
     seeking_shared: Optional[bool] = Form(None),
-    prebooked_roommate_phone: Optional[str] = Form(None),
+    prebooked_roommate_phone: Optional[str] = Form(None, max_length=15),
     amenity_preferences: Optional[str] = Form(None),
 ):
+    _validate_profile_enums(
+        gender=gender,
+        sleep_schedule=sleep_schedule,
+        diet=diet,
+        social_type=social_type,
+        prebooked_roommate_phone=prebooked_roommate_phone,
+    )
     _apply_profile_fields(
         current_resident,
         name=name,
@@ -200,18 +256,19 @@ def update_profile(
         prebooked_roommate_phone=prebooked_roommate_phone,
         amenity_preferences=amenity_preferences,
     )
+    _assert_budget_order(current_resident)
     session.add(current_resident)
     session.commit()
-    return HTMLResponse("<div class='rounded bg-green-50 text-green-800 p-3'>Profile updated.</div>")
+    session.refresh(current_resident)
+    return to_resident_self_view(current_resident)
 
 
-@router.get("/recommendations", response_class=HTMLResponse)
+@router.get("/recommendations")
 def get_recommendations(
-    request: Request,
     current_resident: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
 ):
-    """Ranked, hard-filtered hostels rendered as an HTMX fragment."""
+    """Ranked, hard-filtered hostels as JSON for the recommendations screen."""
     hostels = session.exec(select(Hostel)).all()
     rooms_by_hostel: dict = {}
     for room in session.exec(select(Room)).all():
@@ -221,24 +278,20 @@ def get_recommendations(
     ranked = recommend_hostels(resident_to_engine(current_resident), engine_input, config)
 
     hostels_by_id = {str(h.id): h for h in hostels}
-    cards = []
+    results = []
     for r in ranked:
         hostel = hostels_by_id.get(r["hostel_id"])
         if not hostel:
             continue
-        cards.append(
-            {
-                "hostel": hostel,
-                "rooms": rooms_by_hostel.get(hostel.id, []),
-                "score": r["final_score"],
-                "price_fit": r["price_fit"],
-                "location_fit": r["location_fit"],
-                "amenity_fit": r["amenity_fit"],
-            }
+        results.append(
+            to_recommendation_view(
+                hostel,
+                rooms_by_hostel.get(hostel.id, []),
+                r["final_score"],
+                r["price_fit"],
+                r["location_fit"],
+                r["amenity_fit"],
+            )
         )
 
-    return templates.TemplateResponse(
-        request,
-        "resident/recommendations.html",
-        {"cards": cards},
-    )
+    return {"results": results}

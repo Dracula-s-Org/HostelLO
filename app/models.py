@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List
 
-from sqlalchemy import Column, JSON, Index, text
+from sqlalchemy import CheckConstraint, Column, JSON, Index, text
 from sqlmodel import SQLModel, Field
 
 
@@ -81,6 +81,16 @@ class MatchStatus(str, Enum):
     REJECTED = "REJECTED"
 
 
+class DocType(str, Enum):
+    """Accepted KYC identity documents (request-layer allowlist; the DB column
+    stays free TEXT for forward-compat)."""
+    AADHAAR = "AADHAAR"
+    PAN = "PAN"
+    PASSPORT = "PASSPORT"
+    DRIVING_LICENSE = "DRIVING_LICENSE"
+    VOTER_ID = "VOTER_ID"
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -151,6 +161,14 @@ class Hostel(SQLModel, table=True):
 
 class Room(SQLModel, table=True):
     __tablename__ = "rooms"
+    __table_args__ = (
+        # Defense-in-depth backstop: occupancy can never exceed capacity or go
+        # negative, even if application logic regresses (HLD §7.1).
+        CheckConstraint(
+            "occupied_count >= 0 AND occupied_count <= capacity",
+            name="ck_room_occupancy_bounds",
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     hostel_id: uuid.UUID = Field(foreign_key="hostels.id", index=True)

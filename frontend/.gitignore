@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Build output
+# NOTE: dist/ is intentionally COMMITTED. Render's Python runtime has no Node,
+# so the prebuilt Vite bundle ships in the repo and FastAPI serves it (app/spa.py).
+dist-ssr/
+
+# Local env / editor
+*.local
+.vite/

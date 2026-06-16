@@ -10,7 +10,7 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-dist/
+/dist/
 
 # Test / tooling caches
 .pytest_cache/
@@ -25,8 +25,11 @@ htmlcov/
 # Local SQLite databases
 *.db
 
-# Uploaded assets (dev-only; production uses Cloudinary)
+# Uploaded assets (dev-only; production uses Cloudinary). Contains raw KYC ID
+# documents — must never be committed.
 static/uploads/
+var/
+var/uploads/
 
 # Editor / OS
 .vscode/

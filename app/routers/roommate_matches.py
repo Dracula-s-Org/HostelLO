@@ -6,7 +6,6 @@ client-sent scores (TDD §10).
 import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, status
-from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -28,7 +27,7 @@ from app.services.matchmaking import build_candidate_pool, has_active_booking, s
 router = APIRouter(prefix="/api/roommate-matches", tags=["Roommate Matches"])
 
 
-@router.post("", response_class=HTMLResponse)
+@router.post("")
 def create_roommate_match(
     candidate_id: uuid.UUID = Form(..., alias="candidateId"),
     profile: ResidentProfile = Depends(get_current_resident),
@@ -94,14 +93,17 @@ def create_roommate_match(
     booking.roommate_match_id = match.id  # same transaction (HLD §5.1.2)
     session.add(booking)
     session.commit()
+    session.refresh(match)
 
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Proposal sent — pending their consent. "
-        f"Compatibility: <b>{match.score}%</b></div>"
-    )
+    return {
+        "match_id": str(match.id),
+        "status": match.status,
+        "score": match.score,
+        "breakdown": match.breakdown,
+    }
 
 
-@router.post("/{match_id}/accept", response_class=HTMLResponse)
+@router.post("/{match_id}/accept")
 def accept_roommate_match(
     match_id: uuid.UUID,
     profile: ResidentProfile = Depends(get_current_resident),
@@ -111,7 +113,8 @@ def accept_roommate_match(
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.resident_b != profile.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the invited resident can accept")
+        # 404: don't reveal that a match with this id exists for other residents.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.status != MatchStatus.PROPOSED.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=f"Match is {match.status}, not PROPOSED."
@@ -132,26 +135,28 @@ def accept_roommate_match(
     match.status = MatchStatus.CONFIRMED.value
     session.add(match)
     # Auto-create linked Booking B (HLD §5.1.3)
-    session.add(
-        Booking(
-            resident_id=profile.user_id,
-            room_id=match.room_id,
-            roommate_match_id=match.id,
-            status=BookingStatus.REQUESTED.value,
-        )
+    linked_booking = Booking(
+        resident_id=profile.user_id,
+        room_id=match.room_id,
+        roommate_match_id=match.id,
+        status=BookingStatus.REQUESTED.value,
     )
+    session.add(linked_booking)
     session.commit()
+    session.refresh(linked_booking)
 
     partner_profile = session.get(ResidentProfile, match.resident_a)
     partner_user = session.get(User, match.resident_a)
-    partner = to_match_confirmed_view(partner_profile, partner_user)
-    return HTMLResponse(
-        "<div class='rounded bg-green-50 text-green-800 p-3'>Match confirmed! Your linked booking "
-        f"was created. Roommate: <b>{partner['full_name']}</b> · {partner['phone']}</div>"
-    )
+    # CONFIRMED match unlocks full name + verified mobile for move-in coordination.
+    return {
+        "match_id": str(match.id),
+        "status": match.status,
+        "booking_id": str(linked_booking.id),
+        "roommate": to_match_confirmed_view(partner_profile, partner_user),
+    }
 
 
-@router.post("/{match_id}/reject", response_class=HTMLResponse)
+@router.post("/{match_id}/reject")
 def reject_roommate_match(
     match_id: uuid.UUID,
     profile: ResidentProfile = Depends(get_current_resident),
@@ -161,7 +166,8 @@ def reject_roommate_match(
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if profile.user_id not in (match.resident_a, match.resident_b):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant of this match")
+        # 404: don't reveal that a match with this id exists for other residents.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     if match.status == MatchStatus.CONFIRMED.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -180,35 +186,31 @@ def reject_roommate_match(
         b.roommate_match_id = None
         session.add(b)
     session.commit()
-    return HTMLResponse("<div class='rounded bg-amber-50 text-amber-800 p-3'>Proposal declined.</div>")
+    return {"match_id": str(match.id), "status": match.status}
 
 
-@router.get("/pending", response_class=HTMLResponse)
+@router.get("/pending")
 def pending_matches(
     profile: ResidentProfile = Depends(get_current_resident),
     session: Session = Depends(get_session),
 ):
-    """Incoming proposals awaiting this resident's consent (HTMX fragment)."""
+    """Incoming proposals awaiting this resident's consent, as JSON."""
     matches = session.exec(
         select(RoommateMatch).where(
             RoommateMatch.resident_b == profile.user_id,
             RoommateMatch.status == MatchStatus.PROPOSED.value,
         )
     ).all()
-    if not matches:
-        return HTMLResponse("<p class='text-sm text-gray-500'>No pending roommate proposals.</p>")
-    parts = []
+    pending = []
     for m in matches:
         proposer = session.get(ResidentProfile, m.resident_a)
-        first = (proposer.name or "").split()[0] if proposer else "Someone"
-        parts.append(
-            f"<div class='border rounded p-3 space-y-2'><p><b>{first}</b> proposed to share a room "
-            f"with you — compatibility <b>{m.score}%</b></p>"
-            f"<div class='flex gap-2'>"
-            f"<button hx-post='/api/roommate-matches/{m.id}/accept' hx-target='closest div' "
-            "class='bg-green-600 text-white rounded px-3 py-1'>Accept</button>"
-            f"<button hx-post='/api/roommate-matches/{m.id}/reject' hx-target='closest div' "
-            "class='bg-gray-200 rounded px-3 py-1'>Decline</button>"
-            "</div></div>"
+        first = (proposer.name or "").split()[0] if proposer and proposer.name else "Someone"
+        pending.append(
+            {
+                "match_id": str(m.id),
+                "score": m.score,
+                "breakdown": m.breakdown,
+                "from": {"first_name": first},
+            }
         )
-    return HTMLResponse("".join(parts))
+    return {"pending": pending}

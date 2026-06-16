@@ -4,6 +4,10 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///./test_hostello.db"
 os.environ["MOCK_OTP"] = "true"
 os.environ["MOCK_KYC"] = "true"
+# The IP rate limiter shares one in-memory store across the whole app, so leaving
+# it on would leak buckets between unrelated tests (every test logs in from the
+# same client IP). The dedicated rate-limit test re-enables it explicitly.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +20,11 @@ from app import models  # noqa: F401 — register tables on metadata
 
 @pytest.fixture(autouse=True)
 def fresh_db():
+    # OTP send/attempt state lives in a module-level dict, not the DB; clear it
+    # so per-window send limits don't leak across tests that reuse phone numbers.
+    from app.security import _otp_state
+
+    _otp_state.clear()
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     yield
@@ -50,11 +59,16 @@ def login(client: TestClient, phone: str, role: str) -> None:
     assert r.status_code == 200, r.text
 
 
+# Minimal valid JPEG header — uploads are now validated by magic bytes, not the
+# client-supplied content-type, so the fixture must look like a real image.
+_JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01" + b"\x00" * 32
+
+
 def submit_kyc(client: TestClient) -> None:
     r = client.post(
         "/api/kyc/submit",
         data={"doc_type": "AADHAAR"},
-        files={"document": ("id.jpg", b"fake-image-bytes", "image/jpeg")},
+        files={"document": ("id.jpg", _JPEG_BYTES, "image/jpeg")},
     )
     assert r.status_code == 200, r.text
 

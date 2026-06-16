@@ -5,6 +5,7 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.models import (
@@ -114,7 +115,16 @@ def create_booking(
     if room.type == RoomType.SHARED.value:
         match = _attempt_prebooked_pair(session, profile, user, room, booking)
 
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # The partial unique index (one active booking per resident) is the real
+        # guard against a concurrent self-booking by either resident in the pair.
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That booking conflicts with an existing active booking. Please retry.",
+        )
     session.refresh(booking)
     return booking, match
 
@@ -122,7 +132,8 @@ def create_booking(
 def cancel_booking(session: Session, booking: Booking, profile: ResidentProfile) -> str:
     """Cancellation cascades (HLD §5.2.3). Returns a human-readable outcome."""
     if booking.resident_id != profile.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your booking")
+        # 404 (not 403): never confirm another resident's booking exists.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
     if booking.status == BookingStatus.REQUESTED.value:
         booking.status = BookingStatus.CANCELLED.value
@@ -150,7 +161,6 @@ def cancel_booking(session: Session, booking: Booking, profile: ResidentProfile)
     if booking.status == BookingStatus.CONFIRMED.value:
         booking.status = BookingStatus.CANCELLED.value
         session.add(booking)
-        released = 1
         if booking.roommate_match_id:
             match = session.get(RoommateMatch, booking.roommate_match_id)
             if match and match.status != MatchStatus.REJECTED.value:
@@ -164,13 +174,34 @@ def cancel_booking(session: Session, booking: Booking, profile: ResidentProfile)
                 )
             ).first()
             if partner:
+                # HLD §5.2.3: the pair dissolves as a unit — the partner returns to
+                # REQUESTED (they can re-match via the roommate flow). NOTE: a
+                # security review flagged demoting an already-approved partner as
+                # user-hostile; whether they should instead keep their seat is a
+                # product decision tracked separately, not changed here.
                 partner.status = BookingStatus.REQUESTED.value
                 partner.roommate_match_id = None
                 session.add(partner)
-                released = 2
-        room = session.get(Room, booking.room_id)
-        room.occupied_count = max(0, room.occupied_count - released)
-        room.status = RoomStatus.AVAILABLE.value
+        session.flush()
+        # Lock the room first so the recompute serializes against a concurrent
+        # owner-approve on Postgres (no-op lock on SQLite's single writer), then
+        # recompute occupancy authoritatively from the surviving CONFIRMED rows so
+        # the ledger the capacity gate trusts can never drift (no fragile deltas).
+        room = session.exec(
+            select(Room).where(Room.id == booking.room_id).with_for_update()
+        ).first()
+        confirmed_count = len(
+            session.exec(
+                select(Booking).where(
+                    Booking.room_id == room.id,
+                    Booking.status == BookingStatus.CONFIRMED.value,
+                )
+            ).all()
+        )
+        room.occupied_count = confirmed_count
+        room.status = (
+            RoomStatus.FULL.value if confirmed_count >= room.capacity else RoomStatus.AVAILABLE.value
+        )
         session.add(room)
         session.commit()
         return "Confirmed booking cancelled; room inventory released."
