@@ -1,0 +1,46 @@
+# Render Blueprint — HostelLo web service (Dev B infra deliverable).
+# DB lives on Neon (permanent free tier), not Render Postgres (90-day expiry).
+services:
+  - type: web
+    name: hostello
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Single worker is mandatory: in-memory OTP store + free-tier RAM (HLD §7.3).
+    # Seed runs first — idempotent, a no-op once the demo data exists.
+    startCommand: python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string in the dashboard
+      - key: CLOUDINARY_URL
+        sync: false # paste from the Cloudinary dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      # DEMO config (hackathon): development mode enables the mock OTP/KYC providers
+      # so a judge can log in with the fixed code 123456. For a real public deploy,
+      # set this to "production" and the two MOCK_* flags to "false" (and wire a real
+      # SMS/KYC provider) — config.py's validator refuses to boot prod with mocks on.
+      - key: ENVIRONMENT
+        value: "development"
+      - key: ALLOWED_HOSTS
+        value: "*" # demo: allow any Host so Render health checks don't 400
+      - key: MOCK_OTP
+        value: "true"
+      - key: MOCK_KYC
+        value: "true"
+      - key: W_PRICE
+        value: "0.40"
+      - key: W_LOCATION
+        value: "0.40"
+      - key: W_AMENITY
+        value: "0.20"
+      - key: BUDGET_SLACK
+        value: "500.00"
+      - key: CLEAN_BAND
+        value: "1"
+      - key: PREMIUM_BOOST
+        value: "1.15"
+      - key: VERIFIED_BOOST
+        value: "0.05"
