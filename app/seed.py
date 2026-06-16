@@ -56,6 +56,10 @@ def seed() -> None:
         owner = OwnerProfile(user_id=owner_user.id, name="Rajesh Kumar",
                              contact="rajesh@sunrisepg.in")
         session.add(owner)
+        # Flush so the owner_profiles row is INSERTed before the hostels that
+        # FK-reference it. Postgres enforces FKs within a flush; SQLite doesn't,
+        # which is why this only surfaced on Neon.
+        session.flush()
 
         # Hostels
         sunrise = Hostel(

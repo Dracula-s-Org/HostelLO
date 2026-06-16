@@ -156,10 +156,10 @@ def test_request_otp_rate_limited_per_ip(make_client):
                 data={"phone": f"73000000{i:02d}", "role": "RESIDENT"},
                 headers=headers,
             ).status_code
-            for i in range(7)
+            for i in range(35)
         ]
         # Each phone is unique, so the per-phone send cap never trips — only the
-        # 5/min per-IP limit does, which is the SMS-bomb / DB-bloat vector.
+        # 30/min per-IP limit does, which is the SMS-bomb / DB-bloat vector.
         assert 429 in statuses
     finally:
         limiter.enabled = False
