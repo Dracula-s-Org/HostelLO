@@ -68,6 +68,9 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+# Ensure the dir exists on a fresh clone (Render deploys via git clone, and
+# static/ holds only gitignored uploads) so StaticFiles doesn't crash at import.
+os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(auth.router)

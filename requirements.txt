@@ -5,6 +5,10 @@ uvicorn[standard]>=0.34,<0.35
 # Request parsing — Form()/multipart uploads need python-multipart
 python-multipart>=0.0.18
 
+# HTML escaping used by auth's legacy HTMX fallback. Not pulled in transitively
+# once Jinja2/templates were retired, so it must be declared explicitly.
+markupsafe>=2.1
+
 # ORM + settings
 sqlmodel>=0.0.22
 pydantic-settings>=2.7,<3.0

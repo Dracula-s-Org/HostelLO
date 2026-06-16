@@ -88,6 +88,16 @@ export function WelcomePage() {
           {!submitting && <Icon name="arrow_forward" className="text-[18px]" />}
         </Button>
       </form>
+
+      <div className="mt-stack-md rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-label-sm text-on-surface-variant">
+        <p className="text-label-md text-on-surface mb-1">
+          Demo access · OTP <span className="font-mono">123456</span>
+        </p>
+        <p>
+          Owner <span className="font-mono">9100000001</span> · Resident{" "}
+          <span className="font-mono">9000000004</span>
+        </p>
+      </div>
     </AuthLayout>
   );
 }

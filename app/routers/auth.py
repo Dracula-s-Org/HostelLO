@@ -41,7 +41,7 @@ def _otp_sent_response(request: Request, phone: str):
 
 
 @router.post("/request-otp")
-@limiter.limit("5/minute")  # per-IP, on top of the per-phone send cap (anti SMS-bomb)
+@limiter.limit("30/minute")  # per-IP; per-phone send cap still applies. Raised so several judges behind one venue NAT don't collectively 429.
 def request_otp(
     request: Request,
     phone: str = Form(..., min_length=10, max_length=15),
@@ -80,7 +80,7 @@ def request_otp(
 
 
 @router.post("/verify-otp")
-@limiter.limit("10/minute")  # per-IP cap layered on the per-phone attempt budget
+@limiter.limit("30/minute")  # per-IP; per-phone attempt budget still applies. Raised for shared-NAT demo audiences.
 def verify_otp(
     request: Request,
     phone: str = Form(...),

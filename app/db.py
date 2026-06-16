@@ -13,7 +13,11 @@ def _normalize(url: str) -> str:
 DATABASE_URL = _normalize(config.DATABASE_URL)
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# Neon free-tier compute auto-suspends after ~5 min idle and silently drops
+# pooled connections; pre-ping + recycle transparently reconnect so the first
+# request after an idle gap doesn't 500. No-op on local SQLite.
+engine_kwargs = {} if DATABASE_URL.startswith("sqlite") else {"pool_pre_ping": True, "pool_recycle": 300}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, **engine_kwargs)
 
 
 def init_db() -> None:
