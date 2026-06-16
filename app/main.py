@@ -57,12 +57,15 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    # React-only: the bundle is served same-origin, so no external script/style
-    # CDNs are allowlisted (HTMX/unpkg + Tailwind CDN retired with the templates).
+    # React-only: the bundle is served same-origin. The only external origin is
+    # Pendo (product analytics): its agent loads from cdn.pendo.io + a static
+    # GCS bucket, and beacons events to *.pendo.io. The loader itself is bundled
+    # ('self'), so no 'unsafe-inline' is needed for scripts.
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' https: data:; "
-        "script-src 'self'; "
+        "script-src 'self' https://cdn.pendo.io https://*.storage.googleapis.com; "
+        "connect-src 'self' https://*.pendo.io https://*.storage.googleapis.com; "
         "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
     )
     return response
