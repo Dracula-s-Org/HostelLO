@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { ErrorNote } from "../../components/primitives";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import { pendoTrack, setPendoRole } from "../../lib/pendo";
 import type { Role } from "../../lib/types";
 
 interface OtpState {
@@ -33,6 +34,8 @@ export function OtpPage() {
     try {
       const res = await api.auth.verifyOtp(state!.phone, code.trim());
       login(res.role);
+      setPendoRole(res.role);
+      pendoTrack("user_login_completed", { user_type: res.role, method: "otp" });
       navigate(res.redirect, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Verification failed. Try again.");
