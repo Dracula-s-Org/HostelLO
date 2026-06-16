@@ -25,6 +25,16 @@ class OperationalConfig(BaseSettings):
     # OTP delivery throttling (in-memory; single-worker deploy, HLD §7.3)
     OTP_MAX_SENDS_PER_WINDOW: int = 5
 
+    # IP-based rate limiting (slowapi). Disabled in the test suite so the shared
+    # in-memory limiter doesn't leak buckets across unrelated tests; one test
+    # re-enables it explicitly to pin the regression.
+    RATE_LIMIT_ENABLED: bool = True
+
+    # Per-owner abuse caps — an authenticated owner could otherwise exhaust disk
+    # by creating unlimited hostels/rooms/images.
+    MAX_ROOMS_PER_OWNER: int = 200
+    MAX_IMAGES_PER_ROOM: int = 10
+
     # Deployment environment: "development" | "production". Production fails fast
     # on insecure defaults (mock auth, default JWT secret) — see the validator below.
     ENVIRONMENT: str = "development"
@@ -35,7 +45,9 @@ class OperationalConfig(BaseSettings):
     # Auth / session
     JWT_SECRET: str = DEFAULT_DEV_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 720
+    # Stateless JWT can't be revoked before exp, so keep the window short (2h).
+    # Logout clears the cookie; a leaked token stays valid only until it expires.
+    JWT_EXPIRE_MINUTES: int = 120
 
     # Persistence: SQLite locally, Neon Postgres in deploy (set DATABASE_URL on Render)
     DATABASE_URL: str = "sqlite:///./hostello.db"
