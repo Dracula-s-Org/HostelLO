@@ -9,10 +9,11 @@ import { useAuth } from "../../lib/auth";
 import { useAsync } from "../../lib/useAsync";
 
 const DOC_TYPES = [
-  { value: "AADHAR", label: "Aadhaar" },
+  { value: "AADHAAR", label: "Aadhaar" },
   { value: "PAN", label: "PAN card" },
   { value: "PASSPORT", label: "Passport" },
-  { value: "DL", label: "Driving licence" },
+  { value: "DRIVING_LICENSE", label: "Driving licence" },
+  { value: "VOTER_ID", label: "Voter ID" },
 ];
 
 export function KycPage() {
@@ -20,7 +21,7 @@ export function KycPage() {
   const { role } = useAuth();
   const { data, loading, error, reload } = useAsync(() => api.kyc.status(), []);
 
-  const [docType, setDocType] = useState("AADHAR");
+  const [docType, setDocType] = useState("AADHAAR");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
