@@ -78,7 +78,8 @@ def test_cannot_cancel_someone_elses_booking(session):
 
     with pytest.raises(HTTPException) as exc:
         cancel_booking(session, booking, b)
-    assert exc.value.status_code == 403
+    # 404, not 403: never confirm another resident's booking exists (enumeration guard).
+    assert exc.value.status_code == 404
 
 
 def test_a6_prebooked_reciprocal_pair_creates_confirmed_match(session):

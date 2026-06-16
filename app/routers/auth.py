@@ -1,6 +1,4 @@
 """OTP auth (mocked SMS) -> JWT httpOnly cookie. HLD §4.1, TDD §10."""
-import re
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from markupsafe import escape
@@ -9,6 +7,7 @@ from sqlmodel import Session, select
 from app.config import config
 from app.db import get_session
 from app.models import User, UserRole
+from app.ratelimit import limiter
 from app.security import (
     COOKIE_NAME,
     can_request_otp,
@@ -17,10 +16,9 @@ from app.security import (
     issue_otp,
 )
 from app.services.sms import sms_provider
+from app.validators import PHONE_RE
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
-
-_PHONE_RE = re.compile(r"^\+?\d{10,15}$")
 
 
 def _is_htmx(request: Request) -> bool:
@@ -43,6 +41,7 @@ def _otp_sent_response(request: Request, phone: str):
 
 
 @router.post("/request-otp")
+@limiter.limit("5/minute")  # per-IP, on top of the per-phone send cap (anti SMS-bomb)
 def request_otp(
     request: Request,
     phone: str = Form(..., min_length=10, max_length=15),
@@ -51,7 +50,7 @@ def request_otp(
 ):
     if role not in (UserRole.OWNER.value, UserRole.RESIDENT.value):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
-    if not _PHONE_RE.match(phone):
+    if not PHONE_RE.match(phone):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid phone number")
 
     ok, _ = can_request_otp(phone)
@@ -81,6 +80,7 @@ def request_otp(
 
 
 @router.post("/verify-otp")
+@limiter.limit("10/minute")  # per-IP cap layered on the per-phone attempt budget
 def verify_otp(
     request: Request,
     phone: str = Form(...),

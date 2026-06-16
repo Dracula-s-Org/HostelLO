@@ -4,6 +4,10 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///./test_hostello.db"
 os.environ["MOCK_OTP"] = "true"
 os.environ["MOCK_KYC"] = "true"
+# The IP rate limiter shares one in-memory store across the whole app, so leaving
+# it on would leak buckets between unrelated tests (every test logs in from the
+# same client IP). The dedicated rate-limit test re-enables it explicitly.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
