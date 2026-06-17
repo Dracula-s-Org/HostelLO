@@ -4,11 +4,30 @@ Thanks to everyone who has contributed to HostelLo.
 
 ## Maintainer
 
-- **Sushant Pandey** ([@DRACULA1729](https://github.com/DRACULA1729)) — creator and maintainer
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/DRACULA1729">
+        <img src="https://github.com/DRACULA1729.png" width="100" height="100" alt="Sushant Pandey"><br>
+        <sub><b>Sushant Pandey</b></sub>
+      </a><br>
+      <sub>Creator &amp; maintainer</sub>
+    </td>
+  </tr>
+</table>
 
 ## Contributors
 
-- **Akshat**
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/akshat-s99">
+        <img src="https://github.com/akshat-s99.png" width="100" height="100" alt="Akshat Singh"><br>
+        <sub><b>Akshat Singh</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## Tooling
 
